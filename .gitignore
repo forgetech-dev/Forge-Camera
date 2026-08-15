@@ -1,0 +1,87 @@
+# ---------------------------------------------------------------- macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ---------------------------------------------------------------- Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcresult/
+.swiftpm/xcode/
+
+# Xcode project files are TRACKED by default so a hand-maintained project is
+# not silently lost. If the project is generated from project.yml (XcodeGen,
+# see plan.md D-1), uncomment these two lines instead:
+# *.xcodeproj
+# *.xcworkspace
+
+# ------------------------------------------------ Swift Package Manager
+.build/
+.swiftpm/configuration/
+
+# Package.resolved is intentionally NOT ignored: this repo produces an
+# application, so the exact resolved dependency graph should be committed.
+
+# ------------------------------------------------------ secrets & local config
+# Never commit credentials. See .agents/skills/opensource-quality/references/security-privacy.md
+.env
+.env.*
+*.env
+secrets.*
+Secrets.swift
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+Config.local.*
+*.local.toml
+*.local.json
+!.claude/settings.json
+
+# --------------------------------------------------- vendor SDKs (licensing)
+# Vendor camera SDKs must never be committed. The Sony Camera Remote SDK license
+# forbids redistribution, and forbids reverse engineering. Each contributor
+# obtains it themselves under their own acceptance of the vendor's terms.
+# See .agents/skills/camera-integration/references/licensing.md
+Vendor/
+ThirdParty/
+CrSDK/
+**/CrSDK*/
+sdk-path.txt
+
+# ------------------------------------------------------------ agent tooling
+# The shared skills in .agents/ and the .claude/skills symlinks are part of the
+# repository and MUST stay tracked. Only per-developer local state is ignored.
+.claude/settings.local.json
+.claude/*.local.json
+.codex/
+.aider*
+.cursor/
+
+# ------------------------------------------------------------ build & test output
+*.log
+coverage/
+*.profdata
+*.profraw
+TestResults/
+Screenshots/
+
+# ------------------------------------------------------------ editors
+*.swp
+*~
+.idea/
+.vscode/
+!.vscode/extensions.json
+
+# ------------------------------------------------------------ scratch
+scratch/
+tmp/
