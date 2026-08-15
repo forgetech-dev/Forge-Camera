@@ -26,6 +26,7 @@ engineering skills that coding agents use. There is no application code yet.
 | [`plan.md`](plan.md) | Phased implementation plan, requirements, and engineering guidelines. |
 | [`.agents/`](.agents/README.md) | Shared engineering skills for coding agents. |
 | [`AGENTS.md`](AGENTS.md) | How coding agents should work in this repo. |
+| [`LICENSE`](LICENSE) | Apache-2.0. |
 
 ## Design principles
 
@@ -67,7 +68,12 @@ Start at [`AGENTS.md`](AGENTS.md) for the skill-routing table and working rules.
 
 ## License
 
-Intended: Apache-2.0. The `LICENSE` file has not been added yet.
+[Apache-2.0](LICENSE). Chosen over MIT for its express patent grant — this project moves into
+computational photography and camera control, which are patent-dense areas, and Apache-2.0 passes a
+patent license from every contributor through to users.
+
+Contributions are accepted under the same license, per Apache-2.0 §5. Attribution and third-party
+notices are recorded in [`NOTICE`](NOTICE).
 
 Vendor camera SDKs are **not** redistributable and are never committed here — see
 [`.agents/skills/camera-integration/references/licensing.md`](.agents/skills/camera-integration/references/licensing.md).

@@ -1,0 +1,27 @@
+AI Photographer
+Copyright 2026 The AI Photographer Authors
+
+This product includes software developed by the AI Photographer contributors.
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file for the
+full terms.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+None at present. This project has no third-party runtime dependencies.
+
+Attributions required by third-party licenses are recorded here as dependencies
+are added. Vendor camera SDKs are never redistributed with this project and are
+therefore not listed; see
+.agents/skills/camera-integration/references/licensing.md
+
+--------------------------------------------------------------------------------
+Trademarks
+--------------------------------------------------------------------------------
+
+"Sony" and "Alpha" are trademarks of Sony Group Corporation. "Viltrox" is a
+trademark of its respective owner. "Apple", "iPhone", "Swift", and related marks
+are trademarks of Apple Inc. These marks are used solely to describe hardware and
+platform compatibility, and their use does not imply endorsement or affiliation.
