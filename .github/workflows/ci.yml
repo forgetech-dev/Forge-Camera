@@ -68,9 +68,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Full history: a credential removed in a later commit is still leaked.
           fetch-depth: 0
 
-      - name: Scan for committed credentials
-        uses: gitleaks/gitleaks-action@v2
+      # The gitleaks CLI is MIT licensed and free. The gitleaks-action wrapper is
+      # not — it requires a paid licence for GitHub Organizations, and this repo
+      # lives under one. Running the binary directly avoids that entirely.
+      # Pinned rather than 'latest' so a scanner update can't turn CI red on its own.
+      - name: Install gitleaks
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks version
+
+      # 'detect' was removed in gitleaks 8.30; 'git' scans history, 'dir' scans the
+      # working tree. --redact keeps any finding out of the public build log.
+      - name: Scan git history
+        run: ./gitleaks git --no-banner --redact --exit-code 1
+
+      - name: Scan working tree
+        run: ./gitleaks dir --no-banner --redact --exit-code 1
