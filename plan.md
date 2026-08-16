@@ -163,18 +163,14 @@ Modules are SwiftPM targets. They exist for one reason: **the compiler, not a re
 N-06 and N-07**. Arrows are the only permitted dependencies.
 
 ```
-                      ┌──────────────┐
-                      │  ForgeCore   │  Foundation only. Domain types + engines.
-                      └──────┬───────┘
-        ┌──────────────┬─────┴──────┬──────────────┬───────────────┐
-        ▼              ▼            ▼              ▼               ▼
-  ForgeVision    ForgeCapture  ForgeDirector  ForgeBridge    ForgeTestSupport
-  Vision/ARKit/  AVFoundation   HTTP client   wire types      mocks, fixtures,
-  CoreMotion     FrameSource    + providers   (shared)        session replay
-        │              │            │              │
-        └──────────────┴─────┬──────┴──────────────┘
-                             ▼
-                    ForgePhotographer (iOS app, SwiftUI)
+  ForgePhotographer ─┬─▶ ForgeVision ──┬─▶ ForgeCore (Foundation only)
+                     │                 └─▶ ForgeFrame (CoreVideo ownership only)
+                     ├─▶ ForgeCapture ─┬─▶ ForgeCore
+                     │                 └─▶ ForgeFrame
+                     ├─▶ ForgeDirector ───▶ ForgeCore
+                     └─▶ ForgeBridge ─────▶ ForgeCore
+
+  ForgeTestSupport ──────────────────────▶ ForgeCore
 
   macOS side (never linked into the iOS app):
     forge-server (executable) ─▶ ForgeBridge, ForgeCore, ForgeCameraSony, ForgeDirectorCodex
@@ -183,6 +179,7 @@ N-06 and N-07**. Arrows are the only permitted dependencies.
 | Module | Owns | Must not import |
 |---|---|---|
 | `ForgeCore` | `SceneState`, `CompositionPlan`, `GuidanceState`, `CameraCapabilities`, `ExposurePlan`, `GuidanceEngine`, `ExposureEngine`, `PlanTrigger`, `HeuristicDirector`, all protocols | anything but `Foundation` |
+| `ForgeFrame` | immutable, independently owned Core Video frames and camera intrinsics shared by capture and analysis | AVFoundation, Vision, UI, networking |
 | `ForgeVision` | `VisionSceneAnalyzer`, subject tracking, horizon estimation, `ARMotionSource` | camera vendors, networking, SwiftUI |
 | `ForgeCapture` | `AVFoundationFrameSource`, `PhoneCameraAdapter` | Vision, networking, SwiftUI |
 | `ForgeDirector` | `HTTPDirectorProvider`, plan decoding + validation, retry/budget policy | Vision, AVFoundation, SwiftUI |
@@ -202,8 +199,9 @@ Everything pluggable goes through one of these. If a new abstraction is proposed
 why it is not one of these five.
 
 ```swift
-public protocol FrameSource: Sendable {
-    var frames: AsyncStream<SceneFrame> { get }   // latest-wins, buffer of 1
+public protocol FrameSource<FrameContent>: Sendable {
+    associatedtype FrameContent: Sendable
+    var frames: AsyncStream<SceneFrame<FrameContent>> { get } // latest-wins, buffer of 1
     func start() async throws
     func stop() async
 }
@@ -221,8 +219,9 @@ public protocol DirectorProvider: Sendable {
     func review(_ request: ReviewRequest) async throws -> ReviewResult
 }
 
-public protocol SceneAnalyzer: Sendable {
-    func analyze(_ frame: SceneFrame, previous: SceneState?) async -> SceneState
+public protocol SceneAnalyzer<FrameContent>: Sendable {
+    associatedtype FrameContent: Sendable
+    func analyze(_ frame: SceneFrame<FrameContent>, previous: SceneState?) async -> SceneState
 }
 
 public protocol MotionSource: Sendable {
@@ -230,6 +229,13 @@ public protocol MotionSource: Sendable {
     var gravity: Vector3 { get async }
 }
 ```
+
+`SceneFrame` is generic over a `Sendable` content value. This keeps `ForgeCore`
+Foundation-only while allowing `ForgeFrame` to define a narrow owned-pixel-buffer boundary shared
+by `ForgeCapture` and `ForgeVision`, while recorded sources use portable fixture content. The
+AVFoundation implementation copies each borrowed camera buffer before publishing it: no borrowed
+`CVPixelBuffer` or `CMSampleBuffer` crosses the stream boundary, and the owned buffer remains
+package-scoped and read-only after publication.
 
 `MotionSource` is deliberately separate from `FrameSource`. See §6.5 — this separation is what makes
 F-31 enforceable.
@@ -510,6 +516,7 @@ Forge-Camera/
 │   ├── ForgeCore/               Domain/  Guidance/  Exposure/  Director/  Policies/
 │   ├── ForgeVision/
 │   ├── ForgeCapture/
+│   ├── ForgeFrame/
 │   ├── ForgeDirector/
 │   ├── ForgeBridge/
 │   ├── ForgeCameraSony/

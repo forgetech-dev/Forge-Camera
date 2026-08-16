@@ -12,6 +12,7 @@ let package = Package(
     ],
     products: [
         .library(name: "ForgeCore", targets: ["ForgeCore"]),
+        .library(name: "ForgeCapture", targets: ["ForgeCapture"]),
         .library(name: "ForgeTestSupport", targets: ["ForgeTestSupport"]),
     ],
     targets: [
@@ -19,12 +20,24 @@ let package = Package(
         // or vendor SDKs. The module graph is what enforces that, not review.
         .target(name: "ForgeCore"),
 
+        // Shared immutable CoreVideo frame ownership. This narrow target prevents
+        // ForgeVision and ForgeCapture from depending on one another.
+        .target(name: "ForgeFrame"),
+
+        // Native phone-camera capture. Borrowed buffers are copied into ForgeFrame
+        // ownership and never leak into the Foundation-only domain module.
+        .target(name: "ForgeCapture", dependencies: ["ForgeCore", "ForgeFrame"]),
+
         // Mocks, fixtures, and deterministic doubles. Depends on ForgeCore only.
         .target(name: "ForgeTestSupport", dependencies: ["ForgeCore"]),
 
         .testTarget(
             name: "ForgeCoreTests",
             dependencies: ["ForgeCore", "ForgeTestSupport"]
+        ),
+        .testTarget(
+            name: "ForgeCaptureTests",
+            dependencies: ["ForgeCapture", "ForgeCore", "ForgeFrame"]
         ),
     ],
     swiftLanguageModes: [.v6]

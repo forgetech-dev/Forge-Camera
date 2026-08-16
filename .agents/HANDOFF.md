@@ -13,18 +13,18 @@ link to it instead of copying it.
 
 ## Current state
 
-**Last updated:** 2026-08-15 · **Phase:** 1 complete, 2 not started
+**Last updated:** 2026-08-15 · **Phase:** 1 complete, 2 in progress
 
 | | |
 |---|---|
-| Tests | 117, all passing |
+| Tests | 144, all passing |
 | `make check` | Passing (format, lint, build, test, skills, boundaries) |
-| CI | Passing |
+| CI | Baseline was passing; the new Xcode 16.4 app-build lane has not run remotely yet. |
 | Hardware needed | None. `make build && make test` works on a clean clone with no camera, key, or network. |
 
 ### Built and verified
 
-`ForgeCore` (Foundation only, 18 files) —
+`ForgeCore` (Foundation only) —
 
 - **Domain**: `NormalizedPoint`/`NormalizedRect` (top-left origin, y down), `Angle`,
   `FieldOfView`, `Measured<T>` with provenance, `SceneState` and detection types.
@@ -34,66 +34,92 @@ link to it instead of copying it.
   `GuidanceCueFormatter`.
 - **Exposure**: `ExposureCapabilities`, `ExposureEngine`.
 - **Policies**: `GuidancePolicy`, `ExposurePolicy`, `PlanTriggerPolicy`.
+- **Frame contracts**: generic `SceneFrame`, `FrameSource`, and `SceneAnalyzer`; platform image
+  types do not enter the domain.
 
 `ForgeTestSupport` — `SceneFixtures`, `PlanFixtures`, `MockDirectorProvider`,
-approximate-equality helpers.
+approximate-equality helpers, and deterministic `RecordedFrameSource` replay with explicit
+advancement and newest-one buffering.
+
+`ForgeFrame` — the narrow shared CoreVideo ownership boundary. `PixelBufferFrame` owns an
+independent, read-only copy and package-scoped intrinsics; future `ForgeVision` can consume it
+without depending on `ForgeCapture`.
+
+`ForgeCapture` — initial AVFoundation source: permission and lifecycle status, a serial session
+queue, back-camera 1080p/NV12 configuration, RotationCoordinator, camera intrinsics delivery,
+newest-one frame streaming, bounded buffer-copy pool, and typed actionable errors. Synthetic
+sample-buffer tests verify ownership, metadata, drop accounting, and back-pressure without hardware.
+Permission is now behind the `CameraAuthorization` seam, so the lifecycle races that matter —
+concurrent starts, task cancellation, stopping mid-prompt, backgrounding mid-prompt — are pinned by
+hardware-free tests.
 
 `App` (3 files) — `ForgePhotographerApp`, `GuidanceOverlayView`,
-`GuidancePreviewScreen`. Type-checked against an iOS-built `ForgeCore`, but see the
-blocker below.
+`GuidancePreviewScreen`. The full Core → Frame → Capture → App graph passes a strict Swift 6
+iOS-device-SDK type-check, but the screen still uses its synthetic scene.
 
 ### Not built yet
 
-Everything from `plan.md` Phase 2 onward: AVFoundation capture, Vision analysis, the
-real camera pipeline, any `DirectorProvider` that talks to a model, the Mac bridge, and
-all external-camera work. `ForgeVision`, `ForgeCapture`, `ForgeDirector`, `ForgeBridge`,
-`ForgeCameraSony`, and `forge-server` exist in the plan only — there are no such targets
-in `Package.swift`.
+The Phase 2 vertical slice is not complete: there is no capture-owned preview bridge,
+`ForgeVision`, real-frame composition root, session recorder, or device verification. F-01 is
+therefore **not complete** even though its frame-source foundation exists. Everything from Phase 3
+onward also remains unbuilt: network director, Mac bridge, review loop, and external-camera work.
 
 ---
 
 ## In flight
 
-**Uncommitted work** — Phase 1 completion plus the XcodeGen setup. All gates pass; it
-simply has not been committed yet:
+**Uncommitted work** — the first Phase 2 capture slice. All local hardware-free gates pass; it has
+not been committed:
 
 ```
-M .gitignore  .swiftlint.yml  Makefile  Sources/ForgeCore/Director/CompositionPlan.swift
-? App/  project.yml
-? Sources/ForgeCore/{Director/PlanTrigger,Guidance/GuidanceCueFormatter}.swift
-? Sources/ForgeCore/Exposure/  Sources/ForgeCore/Policies/{Exposure,PlanTrigger}Policy.swift
-? Tests/ForgeCoreTests/{ExposureEngine,GuidanceCueFormatter,PlanTrigger}Tests.swift
+M .github/workflows/ci.yml  Makefile  Package.swift  README.md
+M Tools/check-boundaries.sh  plan.md  project.yml
+? Fixtures/boundaries/
+? Sources/ForgeCore/Domain/SceneFrame.swift
+? Sources/ForgeFrame/  Sources/ForgeCapture/
+? Sources/ForgeTestSupport/RecordedFrameSource.swift
+? Tests/ForgeCoreTests/FrameSourceTests.swift  Tests/ForgeCaptureTests/
 ```
 
-**Next task:** Phase 2 — the iOS camera pipeline. Start with `ForgeCapture`
-(`AVFoundationFrameSource` behind the `FrameSource` protocol), then `ForgeVision`
-(`VisionSceneAnalyzer`), then replace `GuidancePreviewScreen`'s synthetic scene with
-real frames. Load the `ios-camera` and `opensource-quality` skills for that work.
+**Next task:** keep Phase 2 moving without claiming hardware behavior prematurely:
+
+1. ~~Permission/lifecycle seam plus hardware-free lifecycle tests.~~ **Done.**
+2. Add the direct session-driven preview bridge. Load `ios-ui-design`, `ios-camera`, and
+   `opensource-quality` because this crosses the capture/UI boundary.
+3. Add `ForgeVision` (`VisionSceneAnalyzer`) and wire real frames through the composition root. Load
+   `vision-spatial`, `ios-camera`, and `opensource-quality`.
+
+The stale-buffered-frame limitation is **resolved**: `SceneFrame.runID` identifies the delivery run,
+`FrameSource.currentRunID` reports the live one, and `FrameSource.isCurrent(_:)` is the check every
+consumer must apply. A producer still cannot empty an `AsyncStream` buffer — the frame is now
+recognisable rather than prevented — so **the composition root must call `isCurrent` in its consume
+loop** when it is written. That is the one carry-over obligation into step 3.
+
+Known and accepted: concurrent `start()` calls each query permission rather than sharing one
+request. AVFoundation coalesces the visible prompt, so this is invisible to the user, and
+deduplicating it would add machinery for no observable gain. `CaptureLifecycleTests` pins the
+property that matters — all callers resolve and agree — rather than the call count.
 
 ---
 
 ## Blockers
 
-**`xcodebuild` does not run on this machine.** Xcode's first-launch components were
-never installed, so `xcodebuild` fails on *every* destination — simulator and device
-alike — with a plugin-loading error. `devicectl` is missing for the same reason.
+**The local Xcode 16.0 install has no iOS 18 platform/runtime registered.** First-launch now works,
+but `make app` and a generic device build both fail with “iOS 18.0 is not installed”; `simctl` lists
+only watchOS 9. Install the iOS 18 platform/simulator through Xcode before relying on local app
+builds. The current GitHub `macos-15` image does include Xcode 16.4 and an iOS 18.5 simulator, and CI
+selects that version explicitly.
 
-Fix (needs admin, the user must run it):
-
-```sh
-sudo xcodebuild -runFirstLaunch
-```
-
-Until then `make app` is unproven. The workaround used so far, which does work and does
-catch real errors, is to compile the core for iOS and type-check the app against it:
+The workaround is now a script rather than an incantation to retype:
 
 ```sh
-SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-xcrun swiftc -sdk "$SDK" -target arm64-apple-ios18.0 -emit-module \
-  -emit-module-path /tmp/ForgeCore.swiftmodule -module-name ForgeCore \
-  $(find Sources/ForgeCore -name '*.swift')
-xcrun swiftc -sdk "$SDK" -target arm64-apple-ios18.0 -typecheck -I /tmp App/*.swift
+make ios-typecheck        # or ./Tools/typecheck-ios.sh
 ```
+
+It compiles each package boundary in dependency order and type-checks `App/` against them, with the
+device SDK, Swift 6, complete strict concurrency, and warnings as errors. It does **not** link or
+produce a bundle, so it proves the code compiles, never that the app runs. Verified to fail on a
+planted error in both a package target and the app.
 
 **No Apple developer signing set up.** Zero signing identities, zero provisioning
 profiles. A free Apple ID is sufficient for everything through Phase 5 — see the
@@ -116,6 +142,8 @@ survives, not just the conclusion.
 | — | Canonical skills in `.agents/skills/`, **no `.codex/skills/`** | Codex scans `.agents/skills` and `.codex/skills` as separate roots and does **not** deduplicate — a skill reachable from both is listed twice. Verified against Codex 0.144.6. |
 | — | gitleaks **CLI** in CI, not `gitleaks-action` | The action needs a licence key for org-owned repos (free for one repo, paid beyond). The CLI is MIT with no key. Version and SHA-256 both pinned. |
 | — | `GuidanceCueFormatter` lives in `ForgeCore`, not the app | Pure, no UI dependency, and it is the single point where "never fabricate precision" becomes visible text. In the package, `swift test` covers it everywhere. |
+| — | `SceneFrame<Content>` is generic; `ForgeFrame` owns the CoreVideo wrapper | Keeps `ForgeCore` Foundation-only and avoids a forbidden sibling dependency between capture and Vision. `ForgeCapture` copies borrowed AVFoundation storage into this neutral package-internal boundary. |
+| — | XcodeGen is fixed at **2.46.0** | Generated project output is tool-version-dependent. The Makefile checks the version and CI installs the release archive by pinned SHA-256 instead of tracking Homebrew latest. |
 
 Open decisions are tracked in `plan.md` §12 along with the verification list (V-1…V-7).
 
@@ -156,10 +184,30 @@ first — and note that `make lint` deliberately uses `--strict` to match CI exa
 **A guard that never fires is worthless.** `Tools/check-boundaries.sh` was written with
 a regex that missed `rationale?.contains(...)` because it did not allow optional
 chaining. Plant a deliberate violation and confirm the guard catches it before trusting
-it.
+it. The import scanner later failed silently on modifier imports and missed semicolon/block-comment
+forms; `Fixtures/boundaries/import-syntax.swift` is now a permanent self-test.
+
+**Borrowed camera buffers are not Sendable storage.** AVFoundation owns and reuses the
+`CMSampleBuffer`/`CVPixelBuffer` after its delegate returns, and `CVPixelBuffer` is explicitly
+non-Sendable in Swift 6. Copy into the bounded `ForgeFrame.PixelBufferFrame` pool before yielding;
+never weaken the compiler with a raw-buffer conformance. Camera intrinsics are a sample-buffer
+attachment and must be copied separately.
 
 **Measure exit codes, not `tail`'s.** `cmd | tail -1; echo $?` reports the exit status of
 `tail`. This produced two wrong "it passes" conclusions in one session.
+
+**zsh does not word-split unquoted variables.** `COMMON="-sdk … -target …"; swiftc $COMMON` passes
+the whole string as one argument and swiftc rejects it — while a `grep error:` pipeline happily
+printed "ok" for every module. Shared compiler flags belong in an array (`"${COMMON[@]}"`), which is
+why `Tools/typecheck-ios.sh` is `#!/bin/bash` with an array rather than an inline command.
+
+**`swift test` and `make test` are not the same gate.** `make test` adds
+`-Xswiftc -warnings-as-errors`, so a redundant `try?` passes one and fails the other. Run `make
+check` before believing the work is finished.
+
+**A single-slot continuation deadlocks multiple waiters.** A test double holding one
+`CheckedContinuation` silently dropped all but the last concurrent caller, and the suite hung
+instead of failing. Test doubles for concurrent code need a waiter list.
 
 ---
 
@@ -167,6 +215,36 @@ it.
 
 Newest first. One entry per working session. Keep entries short — what changed and what
 the next agent needs to know, not a narrative.
+
+### 2026-08-15 · Claude Code (Opus 5) — session 2
+
+Took the stated next task: the capture lifecycle seam, plus the stale-frame limitation it flagged.
+
+- **`CameraAuthorization` seam** (`status` + `requestAccess`), with `SystemCameraAuthorization`
+  wrapping AVFoundation and a gated stub in the tests. Unknown authorization statuses resolve to
+  denied rather than trusted.
+- **Run identity** — `SceneFrame.runID`, `FrameSource.currentRunID`, and `isCurrent(_:)` resolve the
+  buffered-stale-frame problem generally, for recorded sources as well as live capture. The
+  composition root must apply `isCurrent` when it is written.
+- **11 lifecycle tests**, all hardware-free: denial, restriction, refusal, no prompt when already
+  authorized, concurrent starts, task cancellation, stop-during-prompt, background-during-prompt,
+  and status publication. 129 → 144 tests.
+- **`Tools/typecheck-ios.sh` + `make ios-typecheck`** replaces the documented manual incantation,
+  and is verified to fail on planted errors in both a package target and the app.
+
+Three of my own mistakes are recorded under Traps: a deadlocking single-slot test double, a zsh
+quoting bug that made an iOS verification falsely report success, and a warning that only `make
+test` catches. Nothing device-level is verified; `make app` still needs the iOS platform installed.
+
+### 2026-08-15 · Codex (GPT-5)
+
+Started Phase 2 with the camera-frame foundation. Added generic Foundation-only frame/analyzer
+contracts, deterministic recorded replay, the neutral `ForgeFrame` ownership target, and an
+AVFoundation source with bounded copies, rotation metadata, intrinsics, lifecycle status, and typed
+errors. Added twelve tests (129 total), an iOS app compile lane, warnings-as-errors, a checksummed
+XcodeGen install, and stronger boundary guards with permanent syntax fixtures. The package gates and
+strict iOS type-check pass. Local app linking and every device/performance claim remain unverified;
+next is lifecycle testability plus preview, then Vision and real UI wiring.
 
 ### 2026-08-15 · Claude Code (Opus 5)
 

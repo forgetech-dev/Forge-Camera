@@ -17,8 +17,11 @@ Read **[goal.md](goal.md)** for the full vision, architecture goals, and non-goa
 
 ## Status
 
-**Pre-implementation.** The repository currently contains project direction and the shared
-engineering skills that coding agents use. There is no application code yet.
+**Phase 1 is complete; Phase 2 is underway.** The Foundation-only domain, composition guidance,
+exposure planning, deterministic director, and 129 hardware-free tests are working. The first phone
+camera slice now provides the frame contract, deterministic replay source, bounded owned pixel
+buffers, and an AVFoundation frame source. Live preview, Vision analysis, and the real HUD wiring are
+the next Phase 2 work; device-level behavior is not yet verified.
 
 | | |
 |---|---|
@@ -42,16 +45,21 @@ measure.
 
 Requires macOS with **Xcode 16** (Swift 6, iOS 18 SDK).
 
-Once code lands, the contributor promise is that ordinary development needs **no camera hardware, no
-API key, and no paid AI backend**:
+Ordinary development needs **no camera hardware, no API key, and no paid AI backend**:
 
 ```sh
-make build
-make test
+make check
 ```
 
 Hardware tests and external-service tests are isolated and explicitly invoked. Mock adapters,
 recorded sessions, and a deterministic offline director stand in for everything else.
+
+The iOS project is generated rather than committed. Install XcodeGen 2.46.0, then run:
+
+```sh
+make project    # regenerate Forge.xcodeproj from project.yml
+make app        # unsigned compile-only iOS simulator build
+```
 
 ## Working with coding agents
 

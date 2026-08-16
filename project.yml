@@ -40,6 +40,8 @@ targets:
     dependencies:
       - package: ForgeCamera
         product: ForgeCore
+      - package: ForgeCamera
+        product: ForgeCapture
     info:
       path: App/Info.plist
       properties:

@@ -6,7 +6,10 @@
 # `build` and `test` must stay hardware-free forever: no camera, no API key,
 # no network. That is the contributor promise.
 
-.PHONY: help build test check lint format clean skills release project app boundaries format-check
+.PHONY: help build test check lint format clean skills release project app ios-typecheck boundaries format-check
+
+SWIFT_FLAGS = -Xswiftc -warnings-as-errors
+XCODEGEN_VERSION = 2.46.0
 
 help:
 	@echo "AI Photographer"
@@ -22,18 +25,22 @@ help:
 	@echo "Hardware and external-service tests are excluded from 'make test'."
 
 build:
-	swift build
+	swift build $(SWIFT_FLAGS)
 
 test:
-	swift test
+	swift test $(SWIFT_FLAGS)
 
 # Forge.xcodeproj is generated from project.yml and is gitignored, so it can never
 # drift from the spec or cause a merge conflict.
 project:
 	@if command -v xcodegen >/dev/null 2>&1; then \
+		actual_version=$$(xcodegen --version | awk '{print $$2}'); \
+		if [ "$$actual_version" != "$(XCODEGEN_VERSION)" ]; then \
+			echo "xcodegen $(XCODEGEN_VERSION) required (found $$actual_version)"; exit 1; \
+		fi; \
 		xcodegen generate ; \
 	else \
-		echo "xcodegen not installed (brew install xcodegen)"; exit 1; \
+		echo "xcodegen $(XCODEGEN_VERSION) not installed (brew install xcodegen)"; exit 1; \
 	fi
 
 # Requires Xcode's first-launch components: sudo xcodebuild -runFirstLaunch
@@ -42,8 +49,14 @@ app: project
 		-destination 'generic/platform=iOS Simulator' \
 		-configuration Debug build CODE_SIGNING_ALLOWED=NO
 
+# Verifies the iOS graph without xcodebuild, so a machine missing the installed iOS
+# platform can still prove the app compiles under the app target's own settings.
+# Does not link or produce a bundle; `make app` remains the real build.
+ios-typecheck:
+	@./Tools/typecheck-ios.sh
+
 release:
-	swift build -c release
+	swift build -c release $(SWIFT_FLAGS)
 
 # The pre-push gate. Anything that fails here fails in CI.
 check: format-check lint build test skills boundaries
