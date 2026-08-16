@@ -59,9 +59,11 @@ format-check:
 		echo "swiftformat not installed; skipping (brew install swiftformat)"; \
 	fi
 
+# --strict matches CI exactly. Using --quiet here instead would let warnings pass
+# locally and fail on push, which defeats the point of a local gate.
 lint:
 	@if command -v swiftlint >/dev/null 2>&1; then \
-		swiftlint --quiet ; \
+		swiftlint --strict --quiet ; \
 	else \
 		echo "swiftlint not installed; skipping (brew install swiftlint)"; \
 	fi

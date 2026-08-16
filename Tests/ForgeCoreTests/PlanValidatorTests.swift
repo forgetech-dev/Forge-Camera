@@ -222,7 +222,7 @@ struct PlanValidatorTests {
 
     @Test("Unknown top-level keys in JSON are ignored rather than failing the decode")
     func unknownJSONKeysIgnored() throws {
-        let json = """
+        let json = Data("""
         {
           "schemaVersion": 1,
           "planId": "plan-1",
@@ -230,7 +230,7 @@ struct PlanValidatorTests {
           "subject": { "targetX": 0.66, "targetHeight": 0.6 },
           "somethingTheDirectorInvented": { "nested": true }
         }
-        """.data(using: .utf8)!
+        """.utf8)
 
         let decoded = try JSONDecoder().decode(CompositionPlan.self, from: json)
         let result = try validator.validate(decoded)
@@ -240,7 +240,7 @@ struct PlanValidatorTests {
 
     @Test("Angles and regions use the compact wire shapes a model produces reliably")
     func wireShapes() throws {
-        let json = """
+        let json = Data("""
         {
           "schemaVersion": 1,
           "planId": "plan-1",
@@ -248,7 +248,7 @@ struct PlanValidatorTests {
           "subject": { "bodyYaw": -20 },
           "scene": { "avoidRegions": [[0.0, 0.0, 0.2, 0.4]] }
         }
-        """.data(using: .utf8)!
+        """.utf8)
 
         let decoded = try JSONDecoder().decode(CompositionPlan.self, from: json)
 
