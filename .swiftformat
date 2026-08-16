@@ -1,0 +1,26 @@
+# SwiftFormat configuration
+#
+# Readable over compressed. The formatter should settle mechanical arguments so
+# review time goes to design rather than layout.
+
+--swiftversion 6.0
+
+--indent 4
+--maxwidth 100
+--wraparguments before-first
+--wrapparameters before-first
+--wrapcollections before-first
+--closingparen balanced
+
+--self remove
+--importgrouping testable-bottom
+--commas always
+--trimwhitespace always
+--emptybraces no-space
+--stripunusedargs closure-only
+
+# Keep doc comments as written: they carry the reasoning, and reflowing them
+# churns diffs for no benefit.
+--disable wrapMultilineStatementBraces
+
+--exclude .build,Fixtures

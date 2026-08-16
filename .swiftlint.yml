@@ -1,0 +1,75 @@
+# SwiftLint configuration
+#
+# Rules that protect the architecture, not rules that argue about style —
+# SwiftFormat already settles layout.
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+
+disabled_rules:
+  # SwiftFormat owns line width.
+  - line_length
+  # Domain code reads better with short, well-known names (x, y, id).
+  - identifier_name
+  # Explicit TODOs are useful while the project is young.
+  - todo
+
+opt_in_rules:
+  - array_init
+  - closure_spacing
+  - collection_alignment
+  - contains_over_filter_count
+  - contains_over_first_not_nil
+  - empty_count
+  - empty_string
+  - explicit_init
+  - first_where
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - last_where
+  - literal_expression_end_indentation
+  - modifier_order
+  - operator_usage_whitespace
+  - overridden_super_call
+  - prefer_self_type_over_type_of_self
+  - redundant_nil_coalescing
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - yoda_condition
+
+# A type that grows past these is usually doing more than one job. The project
+# explicitly rejects giant manager types.
+type_body_length:
+  warning: 300
+  error: 450
+
+file_length:
+  warning: 500
+  error: 700
+
+function_body_length:
+  warning: 60
+  error: 100
+
+cyclomatic_complexity:
+  warning: 12
+  error: 20
+
+# `try!` and `fatalError` outside genuine programmer errors are banned.
+force_try:
+  severity: error
+force_cast:
+  severity: error
+
+custom_rules:
+  no_print:
+    name: "Use OSLog, not print"
+    regex: '(^|\s)print\('
+    match_kinds:
+      - identifier
+    message: "Use structured logging (OSLog) rather than print. Never log secrets or image data."
+    severity: warning

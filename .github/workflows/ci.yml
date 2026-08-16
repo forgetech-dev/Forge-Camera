@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: Show toolchain
+        run: swift --version
+
+      # No camera, no API key, no network access to a paid endpoint.
+      # Hardware and external-service tests are excluded by default and are
+      # never enabled here.
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+  boundaries:
+    name: Module boundaries
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The compiler enforces most of the module graph; this catches the rest:
+      # platform imports in the domain, vendor names outside vendor modules,
+      # production code depending on test doubles, and logic branching on the
+      # AI's free-text rationale.
+      - name: Check boundaries
+        run: ./Tools/check-boundaries.sh
+
+      - name: Verify shared agent skills
+        run: ./.agents/verify-skills.sh
+
+  lint:
+    name: Lint and format
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: brew install swiftformat swiftlint
+
+      - name: Format check
+        run: swiftformat --lint .
+
+      - name: Lint
+        run: swiftlint --strict
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for committed credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
