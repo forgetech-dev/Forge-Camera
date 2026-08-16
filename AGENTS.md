@@ -4,8 +4,16 @@ Instructions for coding agents working in this repository.
 
 ## Start here
 
-Read [`goal.md`](goal.md) for project intent, architecture goals, and non-goals. It is the source of
-truth. Do not rewrite it.
+1. **[`.agents/HANDOFF.md`](.agents/HANDOFF.md)** — what the last session did, what is in flight,
+   which decisions are settled, and which traps have already cost someone time. Read this first;
+   it is what makes switching between agents work.
+2. [`goal.md`](goal.md) — project intent, architecture goals, and non-goals. The source of truth.
+   Do not rewrite it.
+3. [`plan.md`](plan.md) — phases, numbered requirements, and open decisions.
+
+**Before you finish, update `.agents/HANDOFF.md`.** Refresh the current state, add a session log
+entry naming which agent you are, and record any durable decision or trap. A handoff document
+nobody maintains is worse than none, because the next agent will trust it.
 
 ## Use the shared project skills
 

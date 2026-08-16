@@ -17,6 +17,10 @@ disabled_rules:
   - identifier_name
   # Explicit TODOs are useful while the project is young.
   - todo
+  # SwiftFormat is configured with `--commas always` and is the tool that writes,
+  # so this rule would fight it on every run. Trailing commas also keep diffs
+  # to a single line when a collection grows.
+  - trailing_comma
 
 opt_in_rules:
   - array_init
@@ -58,6 +62,10 @@ function_body_length:
 cyclomatic_complexity:
   warning: 12
   error: 20
+  # An exhaustive switch mapping every case of an enum is a lookup table, not
+  # branching logic, and the compiler checks it is complete. Counting each case
+  # as complexity would push such code toward a dictionary that loses that check.
+  ignores_case_statements: true
 
 # `try!` and `fatalError` outside genuine programmer errors are banned.
 force_try:

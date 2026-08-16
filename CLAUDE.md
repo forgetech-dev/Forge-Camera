@@ -4,6 +4,9 @@ Claude Code shares this repository's engineering guidance with Codex. **Read
 [`AGENTS.md`](AGENTS.md)** — it holds the skill-routing table and the working rules, and it applies
 here unchanged.
 
+Start with [`.agents/HANDOFF.md`](.agents/HANDOFF.md) for what the last session left behind, and
+update it before you finish.
+
 Claude Code specifics:
 
 - Project skills resolve from `.claude/skills/`, where each entry is a symlink to the canonical skill

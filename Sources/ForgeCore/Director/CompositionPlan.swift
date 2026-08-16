@@ -220,6 +220,12 @@ public enum PhotographicIntent: Sendable, Equatable, Codable, RawRepresentable {
     }
 }
 
+/// Note on comparing these forward-compatible enums.
+///
+/// They are `RawRepresentable`, and the standard library derives `==` from `rawValue`
+/// for such types. That makes `.depth == .unknown("depth")` **true**, so a check like
+/// `value != .unknown(value.rawValue)` is always false and silently does nothing.
+/// Detect an unrecognised case with the `isKnown` pattern match instead.
 public enum ExposurePriority: Sendable, Equatable, Codable, RawRepresentable {
     case subject
     case highlights
@@ -227,6 +233,13 @@ public enum ExposurePriority: Sendable, Equatable, Codable, RawRepresentable {
     case depth
     case balanced
     case unknown(String)
+
+    public var isKnown: Bool {
+        if case .unknown = self {
+            return false
+        }
+        return true
+    }
 
     public init(rawValue: String) {
         switch rawValue {

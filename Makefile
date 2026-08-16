@@ -6,7 +6,7 @@
 # `build` and `test` must stay hardware-free forever: no camera, no API key,
 # no network. That is the contributor promise.
 
-.PHONY: help build test check lint format clean skills release
+.PHONY: help build test check lint format clean skills release project app boundaries format-check
 
 help:
 	@echo "AI Photographer"
@@ -26,6 +26,21 @@ build:
 
 test:
 	swift test
+
+# Forge.xcodeproj is generated from project.yml and is gitignored, so it can never
+# drift from the spec or cause a merge conflict.
+project:
+	@if command -v xcodegen >/dev/null 2>&1; then \
+		xcodegen generate ; \
+	else \
+		echo "xcodegen not installed (brew install xcodegen)"; exit 1; \
+	fi
+
+# Requires Xcode's first-launch components: sudo xcodebuild -runFirstLaunch
+app: project
+	xcodebuild -project Forge.xcodeproj -scheme ForgePhotographer \
+		-destination 'generic/platform=iOS Simulator' \
+		-configuration Debug build CODE_SIGNING_ALLOWED=NO
 
 release:
 	swift build -c release

@@ -1,0 +1,72 @@
+# XcodeGen spec — the Xcode project is generated, never hand-edited.
+#
+# Regenerate with `make project`. Forge.xcodeproj is gitignored: it is a build
+# artifact, so it cannot cause merge conflicts and cannot drift from this file.
+#
+# Almost all code lives in the Swift package. This project exists only to produce
+# an iOS app bundle: SwiftUI views, assets, Info.plist, and signing.
+
+name: Forge
+
+options:
+  bundleIdPrefix: dev.forge
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    # Warnings are signal. Treat them as such before the codebase grows.
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+
+packages:
+  ForgeCamera:
+    path: .
+
+targets:
+  ForgePhotographer:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - package: ForgeCamera
+        product: ForgeCore
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: AI Photographer
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Purpose strings a user can actually evaluate: name the feature, not the API.
+        NSCameraUsageDescription:
+          AI Photographer uses the camera to show a live view and guide you toward a
+          better composition.
+        NSPhotoLibraryAddUsageDescription:
+          AI Photographer saves the photographs you capture to your library.
+        NSLocalNetworkUsageDescription:
+          AI Photographer connects to a Mac on your local network to control an
+          external camera and to plan shots.
+        NSBonjourServices:
+          - _forge-bridge._tcp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.forge.photographer
+        TARGETED_DEVICE_FAMILY: "1,2"
+        # Free "Personal Team" signing works for development. Set DEVELOPMENT_TEAM
+        # locally rather than committing a team id.
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
