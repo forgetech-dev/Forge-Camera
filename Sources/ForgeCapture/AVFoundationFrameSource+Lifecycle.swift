@@ -72,22 +72,27 @@ extension AVFoundationFrameSource {
     }
 
     /// Handles one bounded recovery attempt after media services reset. sessionQueue only.
+    ///
+    /// The recovery path is compiled only where it can run. Reducing it to a `false`
+    /// constant elsewhere left a condition the compiler proved unreachable, which
+    /// Swift 6.1 reports as dead code — correctly, since a platform-specific recovery
+    /// does not belong in a platform-neutral branch.
     private func handleRuntimeError(code: Int?) {
         guard requestedRunning, !isApplicationInBackground else { return }
+
         #if os(iOS)
-            let mediaServicesWereReset = code == AVError.Code.mediaServicesWereReset.rawValue
-        #else
-            let mediaServicesWereReset = false
-        #endif
-        if mediaServicesWereReset, !attemptedRuntimeRestart {
-            attemptedRuntimeRestart = true
-            activateDelivery()
-            session.startRunning()
-            if session.isRunning {
-                statusContinuation.yield(.running)
-                return
+            // One attempt only: a session that cannot be restarted twice will not be
+            // restarted by trying again.
+            if code == AVError.Code.mediaServicesWereReset.rawValue, !attemptedRuntimeRestart {
+                attemptedRuntimeRestart = true
+                activateDelivery()
+                session.startRunning()
+                if session.isRunning {
+                    statusContinuation.yield(.running)
+                    return
+                }
             }
-        }
+        #endif
 
         Self.logger.error("Capture session runtime failure")
         failCurrentAttempt(.runtimeFailure)

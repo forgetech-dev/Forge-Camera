@@ -13,6 +13,7 @@ let package = Package(
     products: [
         .library(name: "ForgeCore", targets: ["ForgeCore"]),
         .library(name: "ForgeCapture", targets: ["ForgeCapture"]),
+        .library(name: "ForgeVision", targets: ["ForgeVision"]),
         .library(name: "ForgeTestSupport", targets: ["ForgeTestSupport"]),
     ],
     targets: [
@@ -28,6 +29,10 @@ let package = Package(
         // ownership and never leak into the Foundation-only domain module.
         .target(name: "ForgeCapture", dependencies: ["ForgeCore", "ForgeFrame"]),
 
+        // On-device perception. Consumes ForgeFrame storage and produces domain
+        // scene state; never talks to the capture session or the network.
+        .target(name: "ForgeVision", dependencies: ["ForgeCore", "ForgeFrame"]),
+
         // Mocks, fixtures, and deterministic doubles. Depends on ForgeCore only.
         .target(name: "ForgeTestSupport", dependencies: ["ForgeCore"]),
 
@@ -38,6 +43,10 @@ let package = Package(
         .testTarget(
             name: "ForgeCaptureTests",
             dependencies: ["ForgeCapture", "ForgeCore", "ForgeFrame"]
+        ),
+        .testTarget(
+            name: "ForgeVisionTests",
+            dependencies: ["ForgeVision", "ForgeCore", "ForgeFrame"]
         ),
     ],
     swiftLanguageModes: [.v6]

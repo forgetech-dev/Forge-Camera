@@ -4,7 +4,7 @@ import SwiftUI
 struct ForgePhotographerApp: App {
     var body: some Scene {
         WindowGroup {
-            GuidancePreviewScreen()
+            CaptureScreen()
         }
     }
 }

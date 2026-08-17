@@ -42,6 +42,8 @@ targets:
         product: ForgeCore
       - package: ForgeCamera
         product: ForgeCapture
+      - package: ForgeCamera
+        product: ForgeVision
     info:
       path: App/Info.plist
       properties:

@@ -13,13 +13,13 @@ link to it instead of copying it.
 
 ## Current state
 
-**Last updated:** 2026-08-15 · **Phase:** 1 complete, 2 in progress
+**Last updated:** 2026-08-16 · **Phase:** 1 complete, 2 vertical slice closed
 
 | | |
 |---|---|
-| Tests | 144, all passing |
+| Tests | 159, all passing |
 | `make check` | Passing (format, lint, build, test, skills, boundaries) |
-| CI | Baseline was passing; the new Xcode 16.4 app-build lane has not run remotely yet. |
+| CI | Last run failed on a Swift 6.1 dead-code error; fixed locally, not yet re-pushed. |
 | Hardware needed | None. `make build && make test` works on a clean clone with no camera, key, or network. |
 
 ### Built and verified
@@ -45,6 +45,17 @@ advancement and newest-one buffering.
 independent, read-only copy and package-scoped intrinsics; future `ForgeVision` can consume it
 without depending on `ForgeCapture`.
 
+`ForgeVision` — on-device perception. `VisionSceneAnalyzer` batches human-rectangle and
+body-pose requests through one `ImageRequestHandler`, converts all Vision geometry into Forge
+normalized space at the boundary, drops low-confidence joints, and matches each pose to a person by
+joint centroid. `SubjectTracker` assigns stable identities by nearest-centre matching with a gate
+and a missing-frame tolerance, so guidance does not jump between people.
+
+`CapturePipeline` (in `ForgeCore`) — the spine. Frames in, guidance out, with the three rates kept
+separate: analysis per frame, planning on the trigger policy, guidance recomputed every frame from
+the latched plan. It applies `isCurrent` before analysis, so the stale-frame obligation is
+discharged. Free of randomness, hence replay-deterministic.
+
 `ForgeCapture` — initial AVFoundation source: permission and lifecycle status, a serial session
 queue, back-camera 1080p/NV12 configuration, RotationCoordinator, camera intrinsics delivery,
 newest-one frame streaming, bounded buffer-copy pool, and typed actionable errors. Synthetic
@@ -53,47 +64,56 @@ Permission is now behind the `CameraAuthorization` seam, so the lifecycle races 
 concurrent starts, task cancellation, stopping mid-prompt, backgrounding mid-prompt — are pinned by
 hardware-free tests.
 
-`App` (3 files) — `ForgePhotographerApp`, `GuidanceOverlayView`,
-`GuidancePreviewScreen`. The full Core → Frame → Capture → App graph passes a strict Swift 6
-iOS-device-SDK type-check, but the screen still uses its synthetic scene.
+`App` — `CaptureScreen` is now the entry point, backed by `CaptureModel`, the composition root that
+wires `AVFoundationFrameSource` + `VisionSceneAnalyzer` + `HeuristicDirector` into `CapturePipeline`.
+`CameraPreviewView` hosts an `AVCaptureVideoPreviewLayer` fed by the session **directly**, never by
+the frame stream, so a slow analysis pass cannot stall the viewfinder. `GuidancePreviewScreen`
+remains as a synthetic-scene harness and is no longer the entry point.
+
+Verified in the simulator, end to end: the permission prompt appears with the real purpose string
+and the HUD shows `awaitingPermission`; granting it then advances to session configuration, fails
+with `cameraUnavailable` because a simulator has no camera, and the HUD shows that error's
+`recoverySuggestion`. That is the typed-error and graceful-degradation design working through every
+layer. Earlier, the synthetic harness showed the guidance chain rendering with the deadband
+correctly suppressing the two in-tolerance cues.
 
 ### Not built yet
 
-The Phase 2 vertical slice is not complete: there is no capture-owned preview bridge,
-`ForgeVision`, real-frame composition root, session recorder, or device verification. F-01 is
-therefore **not complete** even though its frame-source foundation exists. Everything from Phase 3
-onward also remains unbuilt: network director, Mac bridge, review loop, and external-camera work.
+No session recorder, and **no device verification of anything camera-related**. The simulator has no
+camera, so live frames, Vision throughput, tracking quality, preview latency, and every performance
+budget (N-01, N-02) remain unmeasured. Treat F-01/F-02/F-03 as implemented but unproven on hardware.
+
+Everything from Phase 3 onward remains unbuilt: network director, Mac bridge, capture and review
+loop, and all external-camera work. Horizon, lighting, and device motion are still `nil` in
+`SceneState` — `VisionSceneAnalyzer` reports subjects only, so levelling and exposure guidance have
+no input yet. CoreMotion gravity is the cheap next win there.
 
 ---
 
 ## In flight
 
-**Uncommitted work** — the first Phase 2 capture slice. All local hardware-free gates pass; it has
-not been committed:
+**Uncommitted work** — the Phase 2 vertical slice plus the CI fix. All four local gates pass
+(`make check`, `make ios-typecheck`, `make app`, 159 tests). Nothing is committed.
 
-```
-M .github/workflows/ci.yml  Makefile  Package.swift  README.md
-M Tools/check-boundaries.sh  plan.md  project.yml
-? Fixtures/boundaries/
-? Sources/ForgeCore/Domain/SceneFrame.swift
-? Sources/ForgeFrame/  Sources/ForgeCapture/
-? Sources/ForgeTestSupport/RecordedFrameSource.swift
-? Tests/ForgeCoreTests/FrameSourceTests.swift  Tests/ForgeCaptureTests/
-```
+**The CI fix must be pushed.** The last run failed on a Swift 6.1 dead-code error in
+`AVFoundationFrameSource+Lifecycle.swift`; it is fixed but unpushed, so CI is still red.
 
-**Next task:** keep Phase 2 moving without claiming hardware behavior prematurely:
+**Next task, in order:**
 
 1. ~~Permission/lifecycle seam plus hardware-free lifecycle tests.~~ **Done.**
-2. Add the direct session-driven preview bridge. Load `ios-ui-design`, `ios-camera`, and
-   `opensource-quality` because this crosses the capture/UI boundary.
-3. Add `ForgeVision` (`VisionSceneAnalyzer`) and wire real frames through the composition root. Load
-   `vision-spatial`, `ios-camera`, and `opensource-quality`.
+2. ~~Session-driven preview bridge.~~ **Done** — `CameraPreviewView` + `CaptureScreen`.
+3. ~~`ForgeVision` and a real-frame composition root.~~ **Done** — `CaptureModel` + `CapturePipeline`.
+4. **Run it on a physical device.** Everything camera-related is unverified: no live frame has been
+   analyzed, and N-01/N-02 are unmeasured. This is now the highest-value next step and needs free
+   Apple ID signing set up.
+5. Feed `SceneState.horizon` from CoreMotion gravity, and `lighting` from frame statistics. Both are
+   cheap, and levelling is the one cue that is metric-accurate without depth — it currently never
+   fires because `horizon` is always `nil`.
+6. Add a session recorder so real captures become replay fixtures (N-09 has the machinery but no
+   real-world sessions).
 
-The stale-buffered-frame limitation is **resolved**: `SceneFrame.runID` identifies the delivery run,
-`FrameSource.currentRunID` reports the live one, and `FrameSource.isCurrent(_:)` is the check every
-consumer must apply. A producer still cannot empty an `AsyncStream` buffer — the frame is now
-recognisable rather than prevented — so **the composition root must call `isCurrent` in its consume
-loop** when it is written. That is the one carry-over obligation into step 3.
+The stale-buffered-frame limitation is **resolved and discharged**: `CapturePipeline.run()` applies
+`source.isCurrent(frame)` before analysis and counts rejections in `framesDroppedAsStale`.
 
 Known and accepted: concurrent `start()` calls each query permission rather than sharing one
 request. AVFoundation coalesces the visible prompt, so this is invisible to the user, and
@@ -104,11 +124,13 @@ property that matters — all callers resolve and agree — rather than the call
 
 ## Blockers
 
-**The local Xcode 16.0 install has no iOS 18 platform/runtime registered.** First-launch now works,
-but `make app` and a generic device build both fail with “iOS 18.0 is not installed”; `simctl` lists
-only watchOS 9. Install the iOS 18 platform/simulator through Xcode before relying on local app
-builds. The current GitHub `macos-15` image does include Xcode 16.4 and an iOS 18.5 simulator, and CI
-selects that version explicitly.
+**~~No local iOS platform/runtime.~~ Resolved** by `xcodebuild -downloadPlatform iOS`. The iOS 18.0
+runtime and simulators are installed, `make app` exits 0 locally, and the app has been booted,
+installed, and screenshotted in the iPhone 16 Pro simulator. Local app builds are now trustworthy.
+
+**The local compiler is still older than CI's.** Local Xcode 16.0 is Swift 6.0; CI selects Xcode
+16.4, which is Swift 6.1. With `-warnings-as-errors` that makes CI strictly stricter than `make
+check` — see the Traps entry. Installing Xcode 16.4 locally would close it.
 
 The workaround is now a script rather than an incantation to retype:
 
@@ -205,6 +227,24 @@ why `Tools/typecheck-ios.sh` is `#!/bin/bash` with an array rather than an inlin
 `-Xswiftc -warnings-as-errors`, so a redundant `try?` passes one and fails the other. Run `make
 check` before believing the work is finished.
 
+**CI compiles with a newer Swift than the local machine, and warnings are errors.** CI selects
+Xcode 16.4 (Swift 6.1); the local install is Xcode 16.0 (Swift 6.0). A diagnostic added in 6.1 is a
+hard CI failure that `make check` cannot see. The instance that cost a red build: reducing a
+platform-specific value to a `false` constant in an `#else` branch made the following condition
+provably unreachable, which 6.1 reports as dead code. Compile a platform-specific path only under
+its own `#if` rather than neutralising it with a constant. **Installing Xcode 16.4 locally closes
+this gap and the missing-iOS-platform blocker at once.**
+
+**Vision defines its own `NormalizedPoint` and `NormalizedRect`.** Same spelling as the domain
+types, different convention (bottom-left origin), different module. Inside `ForgeVision` an
+unqualified reference is a compile error, not a silent mix-up — but qualify with `ForgeCore.` and
+`Vision.` anyway so a reader knows which is meant. All conversion lives in `VisionGeometry.swift`.
+
+**A new test target is invisible until `.build` is cleared.** Adding `ForgeVisionTests` to
+`Package.swift` left `swift test` reporting the *old* count as passing — the new suite never ran and
+nothing said so. Tests that appear to pass while not running is the worst possible failure mode. If
+a test count does not rise after adding a target, `rm -rf .build` before believing it.
+
 **A single-slot continuation deadlocks multiple waiters.** A test double holding one
 `CheckedContinuation` silently dropped all but the last concurrent caller, and the suite hung
 instead of failing. Test doubles for concurrent code need a waiter list.
@@ -215,6 +255,26 @@ instead of failing. Test doubles for concurrent code need a waiter list.
 
 Newest first. One entry per working session. Keep entries short — what changed and what
 the next agent needs to know, not a narrative.
+
+### 2026-08-16 · Claude Code (Opus 5) — session 3
+
+Closed the Phase 2 vertical slice: real camera frames now reach guidance.
+
+- **Fixed the red CI.** Swift 6.1 rejects a condition made unreachable by a `false` constant in an
+  `#else` branch. The recovery path is now compiled only under `#if os(iOS)`, which is where it can
+  actually run. Scanned for the same pattern elsewhere; the two other sites are safe.
+- **`CapturePipeline`** — the spine, in `ForgeCore`. Applies `isCurrent` before analysis, keeps the
+  three rates separate, and survives a failing director with the previous plan latched.
+- **`ForgeVision`** — `VisionSceneAnalyzer` and `SubjectTracker`, with all Vision→domain coordinate
+  conversion isolated in one file and tested with deliberately asymmetric fixtures.
+- **App** — `CameraPreviewView` (session-driven, not frame-driven), `CaptureModel` as the composition
+  root, `CaptureScreen` as the entry point.
+- **Verified in the simulator**: permission prompt → `awaitingPermission` in the HUD → granted →
+  `cameraUnavailable` with its recovery suggestion. The degradation design works through every layer.
+- Removed a determinism violation: a `UUID()` request id reached `planId` and made two replays of the
+  same session differ.
+
+129 → 159 tests. Nothing verified on real hardware; that is now the top of the list.
 
 ### 2026-08-15 · Claude Code (Opus 5) — session 2
 

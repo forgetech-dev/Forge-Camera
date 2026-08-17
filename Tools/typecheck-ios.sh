@@ -45,6 +45,7 @@ echo "iOS device-SDK type-check (arm64-apple-ios18.0, Swift 6, strict concurrenc
 emit_module ForgeCore $(find Sources/ForgeCore -name '*.swift')
 emit_module ForgeFrame $(find Sources/ForgeFrame -name '*.swift')
 emit_module ForgeCapture $(find Sources/ForgeCapture -name '*.swift')
+emit_module ForgeVision $(find Sources/ForgeVision -name '*.swift')
 
 printf '  %-14s' "App"
 xcrun swiftc "${COMMON[@]}" -I "$MODULES" -typecheck App/*.swift
