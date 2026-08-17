@@ -17,9 +17,9 @@ link to it instead of copying it.
 
 | | |
 |---|---|
-| Tests | 159, all passing |
+| Tests | 160, all passing |
 | `make check` | Passing (format, lint, build, test, skills, boundaries) |
-| CI | Last run failed on a Swift 6.1 dead-code error; fixed locally, not yet re-pushed. |
+| CI | Run #7 failed on a Swift 6.1 unused-result error and a boundaries fixture mismatch; both addressed locally, not yet re-pushed. |
 | Hardware needed | None. `make build && make test` works on a clean clone with no camera, key, or network. |
 
 ### Built and verified
@@ -244,6 +244,22 @@ unqualified reference is a compile error, not a silent mix-up — but qualify wi
 `Package.swift` left `swift test` reporting the *old* count as passing — the new suite never ran and
 nothing said so. Tests that appear to pass while not running is the worst possible failure mode. If
 a test count does not rise after adding a target, `rm -rf .build` before believing it.
+
+**The two Swift versions disagree in opposite directions.** `withExtendedLifetime(x) { #expect(throws:) {…} }`
+returns Void under 6.0 but not under 6.1, so `_ =` is "redundant" to one compiler and required by the
+other — no single spelling satisfies both. The fix was to restructure so there is no result to argue
+about. Expect more of these while local and CI compilers differ; a construct that needs `_ =` is a
+warning sign.
+
+**SwiftFormat can undo a portability fix.** An explicit `-> Void` closure annotation added precisely
+to pin the return type was stripped by the formatter on the next run, silently reverting the fix.
+If a fix depends on syntax the formatter owns, restructure instead of annotating.
+
+**Live planning is a race by design, so replay needs `.synchronous`.** `CapturePipeline` runs the
+director detached so a slow reply cannot stall the frame loop, which means the plan lands on
+whichever frame follows it. A determinism test against the default mode failed roughly one run in
+eight. `PlanningMode.synchronous` exists for replay and regression work (N-09); live capture keeps
+`.concurrent`. Any future golden-file replay must use it.
 
 **A single-slot continuation deadlocks multiple waiters.** A test double holding one
 `CheckedContinuation` silently dropped all but the last concurrent caller, and the suite hung

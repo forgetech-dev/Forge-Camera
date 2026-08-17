@@ -29,10 +29,16 @@ struct CapturePipelineTests {
     private func drain(
         frameCount: Int,
         director: any DirectorProvider = HeuristicDirector(),
-        analyzer: StubSceneAnalyzer<String> = StubSceneAnalyzer()
+        analyzer: StubSceneAnalyzer<String> = StubSceneAnalyzer(),
+        planningMode: Pipeline.PlanningMode = .concurrent
     ) async throws -> (updates: [Pipeline.Update], pipeline: Pipeline) {
         let source = RecordedFrameSource(frames: frames(frameCount))
-        let pipeline = CapturePipeline(source: source, analyzer: analyzer, director: director)
+        let pipeline = CapturePipeline(
+            source: source,
+            analyzer: analyzer,
+            director: director,
+            planningMode: planningMode
+        )
         var iterator = pipeline.updates.makeAsyncIterator()
 
         let running = Task { try await pipeline.run() }
@@ -151,18 +157,30 @@ struct CapturePipelineTests {
 
     // MARK: Determinism
 
-    @Test("The same recorded session produces the same guidance sequence")
+    @Test("Replay with synchronous planning is byte-identical")
     func replayIsDeterministic() async throws {
         func runOnce() async throws -> [GuidanceState] {
-            let (updates, _) = try await drain(frameCount: 6)
+            let (updates, _) = try await drain(frameCount: 6, planningMode: .synchronous)
             return updates.map(\.guidance)
         }
 
+        // Determinism is what makes recorded-session regression testing possible (N-09),
+        // and it requires `.synchronous`: under `.concurrent` the plan lands on whichever
+        // frame follows the director's reply, which is a race by design.
         let first = try await runOnce()
         let second = try await runOnce()
 
-        // Determinism is what makes recorded-session regression testing possible.
         #expect(first == second)
         #expect(!first.isEmpty)
+    }
+
+    @Test("Live planning does not block the frame loop")
+    func concurrentPlanningDoesNotBlockFrames() async throws {
+        // The counterpart guarantee: under `.concurrent` every frame is still
+        // analyzed and delivered, whatever the director is doing.
+        let (updates, pipeline) = try await drain(frameCount: 6, planningMode: .concurrent)
+
+        #expect(updates.count == 6)
+        #expect(await pipeline.framesAnalyzed == 6)
     }
 }

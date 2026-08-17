@@ -26,11 +26,18 @@ struct PixelBufferCopyPoolTests {
         let second = try pool.copy(source)
         let third = try pool.copy(source)
 
-        withExtendedLifetime((first, second, third)) {
-            #expect(throws: PixelBufferCopyError.poolExhausted) {
-                try pool.copy(source)
-            }
+        // The expectation is deliberately outside `withExtendedLifetime`, with an
+        // empty-body call afterwards keeping all three frames alive across it.
+        //
+        // Wrapping the expectation instead makes the closure's result the value of
+        // `#expect(throws:)`, which is Void under Swift 6.0 but not under 6.1 — so
+        // `_ =` is "redundant" to one compiler and required by the other, and there
+        // is no spelling that satisfies both. This form has no result to argue about,
+        // and matches the idiom used below.
+        #expect(throws: PixelBufferCopyError.poolExhausted) {
+            try pool.copy(source)
         }
+        withExtendedLifetime((first, second, third)) {}
 
         first = nil
         let recycled = try pool.copy(source)

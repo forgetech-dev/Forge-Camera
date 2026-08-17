@@ -12,6 +12,22 @@ import Foundation
 /// live camera frames, on a recorded session, and in a test.
 public actor CapturePipeline<Source: FrameSource, Analyzer: SceneAnalyzer>
     where Source.FrameContent == Analyzer.FrameContent {
+    /// When a plan request is allowed to complete relative to the frame loop.
+    public enum PlanningMode: Sendable {
+        /// Planning runs detached, so a slow director never stalls the frame loop.
+        ///
+        /// The plan therefore lands on whichever frame happens to follow the reply,
+        /// which is correct for live capture and inherently non-deterministic.
+        case concurrent
+
+        /// Planning completes before the next frame is processed.
+        ///
+        /// Required for replay: a recorded session must produce a byte-identical
+        /// guidance sequence every time, and it cannot if plan arrival races the
+        /// loop. Only safe when the director is fast and local, as it is in replay.
+        case synchronous
+    }
+
     /// Everything the interface needs for one frame.
     public struct Update: Sendable {
         public let scene: SceneState
@@ -29,6 +45,7 @@ public actor CapturePipeline<Source: FrameSource, Analyzer: SceneAnalyzer>
     private let trigger: PlanTrigger
     private let validator: PlanValidator
     private let validationContext: PlanValidator.Context
+    private let planningMode: PlanningMode
 
     private let updateContinuation: AsyncStream<Update>.Continuation
     /// One update per analyzed frame, newest-one buffered like the frame stream.
@@ -67,7 +84,8 @@ public actor CapturePipeline<Source: FrameSource, Analyzer: SceneAnalyzer>
         guidanceEngine: GuidanceEngine = GuidanceEngine(),
         trigger: PlanTrigger = PlanTrigger(),
         validator: PlanValidator = PlanValidator(),
-        validationContext: PlanValidator.Context = .unconstrained
+        validationContext: PlanValidator.Context = .unconstrained,
+        planningMode: PlanningMode = .concurrent
     ) {
         self.source = source
         self.analyzer = analyzer
@@ -76,6 +94,7 @@ public actor CapturePipeline<Source: FrameSource, Analyzer: SceneAnalyzer>
         self.trigger = trigger
         self.validator = validator
         self.validationContext = validationContext
+        self.planningMode = planningMode
 
         let channel = AsyncStream<Update>.makeStream(bufferingPolicy: .bufferingNewest(1))
         updates = channel.stream
@@ -149,10 +168,10 @@ public actor CapturePipeline<Source: FrameSource, Analyzer: SceneAnalyzer>
             lastPlanReason: lastPlanReason
         ))
 
-        requestPlanIfNeeded(for: scene)
+        await requestPlanIfNeeded(for: scene)
     }
 
-    private func requestPlanIfNeeded(for scene: SceneState) {
+    private func requestPlanIfNeeded(for scene: SceneState) async {
         let decision = trigger.evaluate(
             scene: scene,
             plan: plan,
@@ -163,10 +182,15 @@ public actor CapturePipeline<Source: FrameSource, Analyzer: SceneAnalyzer>
         guard decision.shouldRequest else { return }
         lastPlanReason = decision.reason
 
-        // Detached from the frame loop on purpose: the director runs orders of
-        // magnitude slower than perception, and the loop must not wait for it.
-        planningTask = Task { [weak self] in
-            await self?.performPlanRequest(for: scene)
+        switch planningMode {
+        case .concurrent:
+            // Detached on purpose: the director runs orders of magnitude slower than
+            // perception, and the frame loop must never wait for it.
+            planningTask = Task { [weak self] in
+                await self?.performPlanRequest(for: scene)
+            }
+        case .synchronous:
+            await performPlanRequest(for: scene)
         }
     }
 

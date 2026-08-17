@@ -77,7 +77,10 @@ imports_in() {
     printf '%s\n' __IMPORT_SCAN_FAILED__
     return
   fi
-  printf '%s\n' "$IMPORT_SCAN_OUTPUT" | sort -u
+  # LC_ALL=C so the ordering is byte order everywhere. Without it the collation of
+  # mixed-case module names depends on the runner's locale, and a set comparison
+  # against a fixed list becomes environment-dependent.
+  printf '%s\n' "$IMPORT_SCAN_OUTPUT" | LC_ALL=C sort -u
 }
 
 echo "Module boundaries"
@@ -100,6 +103,18 @@ if [ "$actual_fixture_imports" = "$EXPECTED_FIXTURE_IMPORTS" ]; then
   ok "import scanner recognizes guarded Swift syntax"
 else
   fail "import scanner regression in Fixtures/boundaries/import-syntax.swift"
+  # A guard that fails without saying what it saw cannot be diagnosed on a machine
+  # you do not have. This one differed between a developer laptop and CI and cost
+  # three rounds of guessing before anyone could see the actual output.
+  printf '        fixture file: %s\n' "$IMPORT_FIXTURES"
+  if [ -r "$IMPORT_FIXTURES" ]; then
+    printf '        readable:     yes (%s bytes)\n' "$(wc -c < "$IMPORT_FIXTURES" | tr -d ' ')"
+  else
+    printf '        readable:     NO — the scanner had nothing to read\n'
+  fi
+  printf '        awk:          %s\n' "$(command -v awk)"
+  printf '        expected:     %s\n' "$(printf '%s' "$EXPECTED_FIXTURE_IMPORTS" | tr '\n' ' ')"
+  printf '        actual:       %s\n' "$(printf '%s' "$actual_fixture_imports" | tr '\n' ' ')"
 fi
 
 # ---------------------------------------------------------------- core purity
