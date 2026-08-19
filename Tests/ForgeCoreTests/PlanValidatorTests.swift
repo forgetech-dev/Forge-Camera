@@ -185,6 +185,110 @@ struct PlanValidatorTests {
         #expect(result.plan.scene?.avoidRegions == [good])
     }
 
+    // MARK: Subject selection and framing
+
+    @Test("Selection, anchor, framing, and display advice decode from compact wire shapes")
+    func newGuidanceWireShapes() throws {
+        let json = Data("""
+        {
+          "schemaVersion": 1,
+          "planId": "plan-1",
+          "intent": "environmental_portrait",
+          "selection": {
+            "kind": "animal",
+            "label": "cat",
+            "sourceRegion": [0.38, 0.31, 0.3, 0.42],
+            "visualAnchor": [0.49, 0.39],
+            "confidence": 0.91
+          },
+          "framing": { "targetFrame": [0.18, 0.12, 0.64, 0.76] },
+          "displayAdvice": ["Move closer", "Keep the eyes clear"]
+        }
+        """.utf8)
+
+        let decoded = try JSONDecoder().decode(CompositionPlan.self, from: json)
+        let result = try validator.validate(decoded)
+
+        #expect(result.plan.selection?.kind == .animal)
+        #expect(result.plan.selection?.label == "cat")
+        #expect(result.plan.selection?.sourceRegion == NormalizedRect(
+            x: 0.38,
+            y: 0.31,
+            width: 0.3,
+            height: 0.42
+        ))
+        #expect(result.plan.selection?.visualAnchor == NormalizedPoint(x: 0.49, y: 0.39))
+        #expect(result.plan.selection?.confidence == 0.91)
+        #expect(result.plan.framing?.targetFrame == NormalizedRect(
+            x: 0.18,
+            y: 0.12,
+            width: 0.64,
+            height: 0.76
+        ))
+        #expect(result.plan.displayAdvice == ["Move closer", "Keep the eyes clear"])
+    }
+
+    @Test("A scene-level subject selection does not require a detected region")
+    func sceneSelectionNeedsNoRegion() throws {
+        let plan = PlanFixtures.valid(selection: SubjectSelection(kind: .scene, label: "sunset"))
+
+        let result = try validator.validate(plan)
+
+        #expect(result.plan.selection?.kind == .scene)
+        #expect(result.plan.selection?.label == "sunset")
+        #expect(result.plan.selection?.sourceRegion == nil)
+        #expect(result.plan.selection?.visualAnchor == nil)
+    }
+
+    @Test("Invalid selection geometry degrades without losing the selected subject or advice")
+    func invalidSelectionGeometryDegrades() throws {
+        let plan = PlanFixtures.valid(
+            selection: SubjectSelection(
+                kind: .object,
+                label: "lamp",
+                sourceRegion: NormalizedRect(x: 2, y: 2, width: 0.2, height: 0.2),
+                visualAnchor: NormalizedPoint(x: 1.4, y: -0.2),
+                confidence: 1.2
+            ),
+            framing: FramingPlan(targetFrame: NormalizedRect(
+                x: .nan,
+                y: 0,
+                width: 0.5,
+                height: 0.5
+            )),
+            displayAdvice: ["Reduce background clutter"]
+        )
+
+        let result = try validator.validate(plan)
+
+        #expect(result.plan.selection?.kind == .object)
+        #expect(result.plan.selection?.label == "lamp")
+        #expect(result.plan.selection?.sourceRegion == nil)
+        #expect(result.plan.selection?.visualAnchor == NormalizedPoint(x: 1, y: 0))
+        #expect(result.plan.selection?.confidence == 1)
+        #expect(result.plan.framing == nil)
+        #expect(result.plan.displayAdvice == ["Reduce background clutter"])
+        #expect(result.warnings.contains { $0.field == "selection.sourceRegion" })
+        #expect(result.warnings.contains { $0.field == "framing.targetFrame" })
+    }
+
+    @Test("A partially outside target frame is clipped to the visible image")
+    func targetFrameIsClipped() throws {
+        let plan = PlanFixtures.valid(framing: FramingPlan(
+            targetFrame: NormalizedRect(x: -0.25, y: 0.25, width: 0.75, height: 0.5)
+        ))
+
+        let result = try validator.validate(plan)
+
+        #expect(result.plan.framing?.targetFrame == NormalizedRect(
+            x: 0,
+            y: 0.25,
+            width: 0.5,
+            height: 0.5
+        ))
+        #expect(result.warnings.contains { $0.field == "framing.targetFrame" })
+    }
+
     // MARK: Capture
 
     @Test("A bracket without usable stops degrades to a single shot")
@@ -236,6 +340,9 @@ struct PlanValidatorTests {
         let result = try validator.validate(decoded)
 
         #expect(result.plan.subject?.targetX == 0.66)
+        #expect(result.plan.selection == nil)
+        #expect(result.plan.framing == nil)
+        #expect(result.plan.displayAdvice == nil)
     }
 
     @Test("Angles and regions use the compact wire shapes a model produces reliably")
@@ -264,6 +371,15 @@ struct PlanValidatorTests {
     @Test("A plan survives an encode and decode round trip")
     func codableRoundTrip() throws {
         let original = PlanFixtures.valid(
+            selection: SubjectSelection(
+                kind: PhotographicSubjectKind(rawValue: "reflection"),
+                label: "window reflection",
+                sourceRegion: .init(x: 0.3, y: 0.2, width: 0.4, height: 0.5),
+                visualAnchor: .init(x: 0.52, y: 0.37),
+                confidence: 0.84
+            ),
+            framing: FramingPlan(targetFrame: .init(x: 0.16, y: 0.1, width: 0.68, height: 0.8)),
+            displayAdvice: ["Lower the camera slightly"],
             scene: ScenePlan(
                 targetHorizon: 0.34,
                 avoidRegions: [.init(x: 0, y: 0, width: 0.2, height: 0.4)]

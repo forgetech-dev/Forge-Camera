@@ -231,23 +231,35 @@ if [ -d "$ROOT/Sources" ]; then
 fi
 
 # ------------------------------------------------------- free-text as state
-# The one prose field a plan carries is display-only. Inspecting or comparing its
-# content turns AI prose into application state, which the architecture forbids.
+# Plan prose is display-only. Inspecting or comparing its wording turns AI prose into
+# application state, which the architecture forbids.
 if [ -d "$ROOT/Sources" ]; then
   member_checks=$(grep -rnE 'rationale[?!]?[[:space:]]*\.[_a-zA-Z][_a-zA-Z0-9]*' "$ROOT/Sources" 2>/dev/null || true)
   comparisons=$(grep -rnE '(rationale.*(==|!=|~=)|(==|!=|~=).*rationale)' "$ROOT/Sources" 2>/dev/null \
     | grep -vE 'rationale[[:space:]]*(==|!=)[[:space:]]*nil|nil[[:space:]]*(==|!=)[[:space:]]*[^[:space:]]*rationale' \
     || true)
   switches=$(grep -rnE '(switch|case).*rationale' "$ROOT/Sources" 2>/dev/null || true)
-  bad=$(printf '%s\n%s\n%s\n' "$member_checks" "$comparisons" "$switches" \
+  advice_word_checks=$(grep -rnE 'displayAdvice[?!]?[[:space:]]*\.(contains|firstIndex|lastIndex)' "$ROOT/Sources" 2>/dev/null || true)
+  advice_comparisons=$(grep -rnE '(displayAdvice.*(==|!=|~=)|(==|!=|~=).*displayAdvice)' "$ROOT/Sources" 2>/dev/null \
+    | grep -vE 'displayAdvice[[:space:]]*(==|!=)[[:space:]]*nil|nil[[:space:]]*(==|!=)[[:space:]]*[^[:space:]]*displayAdvice' \
+    || true)
+  advice_switches=$(grep -rnE '(switch|case).*displayAdvice' "$ROOT/Sources" 2>/dev/null || true)
+  label_word_checks=$(grep -rnE 'selection[?!]?\.[[:space:]]*label[?!]?[[:space:]]*\.(contains|hasPrefix|hasSuffix|range|firstIndex|lastIndex)' "$ROOT/Sources" 2>/dev/null || true)
+  label_comparisons=$(grep -rnE '(selection[?!]?\.[[:space:]]*label.*(==|!=|~=)|(==|!=|~=).*selection[?!]?\.[[:space:]]*label)' "$ROOT/Sources" 2>/dev/null \
+    | grep -vE 'label[[:space:]]*(==|!=)[[:space:]]*nil|nil[[:space:]]*(==|!=)[[:space:]]*[^[:space:]]*label' \
+    || true)
+  bad=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+    "$member_checks" "$comparisons" "$switches" \
+    "$advice_word_checks" "$advice_comparisons" "$advice_switches" \
+    "$label_word_checks" "$label_comparisons" \
     | sed '/^$/d' | sort -u)
   if [ -n "$bad" ]; then
     printf '%s\n' "$bad" | while read -r line; do
-      fail "branching on plan rationale (display-only): $line"
+      fail "branching on display-only plan prose: $line"
     done
     FAIL=1
   else
-    ok "no logic branches on plan rationale"
+    ok "no logic branches on display-only plan prose"
   fi
 fi
 

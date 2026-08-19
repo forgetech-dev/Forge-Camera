@@ -68,6 +68,10 @@ IDs are stable and referenced from phase exit criteria and (later) from commit m
 | F-09 | Capture a still image and retrieve it at full quality | 4 |
 | F-10 | Review a captured image and produce a `ReviewResult` with concrete defects | 4 |
 | F-11 | Convert a `ReviewResult` into a retake `CompositionPlan` | 4 |
+| F-12 | Analyze one selected planning image and propose the photographic subject or theme — person, animal, object, place, scene, or no discrete subject — with confidence | 3 |
+| F-13 | Let the user override the proposed subject, then track the selected visual anchor locally without calling the AI per frame | 3 |
+| F-14 | Guide composition in two stages: acquire the AI-selected visual anchor with the optical-centre reticle, then show one target photograph frame with excluded content subdued | 3 |
+| F-15 | Present short shot advice as display-only text; no engine, view model, or test may branch on that prose | 3 |
 
 ### 3.2 Functional — Camera
 
@@ -156,6 +160,12 @@ FrameSource            15–60 Hz   ─┐
 The `CompositionPlan` is **latched state**, not an event stream. Guidance reads whatever the current
 plan is, every frame. A slow, failed, or absent plan never stalls the guidance loop — it just means
 guidance runs against the previous plan or against the heuristic director's plan.
+
+Subject understanding follows the same slow/fast split. The Director inspects one selected,
+privacy-sanitized planning image and proposes a photographic subject or scene theme, a visual anchor,
+and a target frame. Local perception then owns tracking that anchor at frame rate. The AI is not the
+tracker and is not called again unless the selection is lost, the scene changes materially, or the
+user asks to re-analyze.
 
 ### 4.3 Module graph
 
@@ -310,6 +320,11 @@ missing `heightAdjustment` must not become a "hold your position" cue.
   "intent": "environmental_portrait",
   "confidence": 0.82,
   "rationale": "Backlit subject; place off-center to include the archway.",
+  "selection": { "kind": "animal", "label": "cat",
+                 "sourceRegion": [0.38, 0.31, 0.30, 0.42],
+                 "visualAnchor": [0.49, 0.39], "confidence": 0.91 },
+  "framing":  { "targetFrame": [0.18, 0.16, 0.64, 0.72] },
+  "displayAdvice": ["Use the cat's eyes as the visual anchor."],
   "subject":  { "targetX": 0.64, "targetY": 0.48, "targetHeight": 0.66,
                 "bodyYaw": -20, "headYaw": 5, "poseHint": "weight_on_back_foot" },
   "scene":    { "targetHorizon": 0.34, "avoidRegions": [[0.0,0.0,0.2,0.4]] },
@@ -329,18 +344,56 @@ missing `heightAdjustment` must not become a "hold your position" cue.
 3. Clamp normalized values to `[0,1]`; reject `NaN`/`±inf`; wrap angles to `(-180, 180]`.
 4. Snap `recommendedFocalLength` to the connected lens/camera's declared range; drop it if the
    focal length is unknown and no manual value was entered.
-5. Unknown enum cases (`intent`, `poseHint`, `capture.kind`) decode to `.unknown(String)` and are
-   ignored by engines — forward compatibility without a schema bump.
+5. Unknown enum cases (`intent`, `selection.kind`, `poseHint`, `capture.kind`) decode to
+   `.unknown(String)` and are ignored by engines — forward compatibility without a schema bump.
 6. Unknown top-level keys are ignored, never an error.
-7. **`rationale` is display-only.** It is `String?`, it is shown to the user, and **no engine, no
-   view model, and no test may branch on its content.** This is the concrete enforcement of
-   `goal.md` §23's "free-text AI responses used as application state".
+7. Clip partially visible selection/framing geometry into the planning image; drop non-finite,
+   non-positive, or fully outside geometry without discarding independent valid fields.
+8. **`rationale`, `selection.label`, and `displayAdvice` are display-only.** They may be shown to
+   the user, but **no engine, view model, or test may branch on their content.** This is the concrete
+   enforcement of `goal.md` §23's "free-text AI responses used as application state".
 
 **Provider-side generation.** Each `DirectorProvider` is responsible for getting valid JSON out of
 its own model — structured output / JSON-schema-constrained decoding where available, low
 temperature, and at most **one** repair retry with the validation error appended to the prompt. If
 the repair fails, the provider throws and the previous plan stays latched (F-30 path). No repair
 loops, no "just parse whatever came back".
+
+**[DECISION D-5 — 2026-08-18] Subject-agnostic planning.** The Phase 3 product contract now adds the
+following optional fields to schema version 1 while preserving older plans:
+
+```json
+{
+  "selection": {
+    "kind": "animal",
+    "label": "cat",
+    "sourceRegion": [0.38, 0.31, 0.30, 0.42],
+    "visualAnchor": [0.49, 0.39],
+    "confidence": 0.91
+  },
+  "framing": {
+    "targetFrame": [0.18, 0.16, 0.64, 0.72]
+  },
+  "displayAdvice": [
+    "Use the cat's eyes as the visual anchor.",
+    "Lower the camera and exclude the monitor."
+  ]
+}
+```
+
+- `selection.kind` is not limited to people. A scene-level theme is valid and may have no discrete
+  object bounds.
+- `sourceRegion` initializes local tracking; local code resolves or assigns the stable `SubjectID`.
+  An AI-supplied identifier is never trusted as tracking identity.
+- `visualAnchor` is a compositional attention point, not automatically an autofocus point.
+- `targetFrame` is the proposed photograph boundary in Forge normalized planning-image space. It is
+  not a subject bounding box and its preview mapping must account for aspect-fill cropping.
+- `label`, `displayAdvice`, and the existing `rationale` are display-only. Structured fields drive
+  every computation.
+- The user may replace the proposed selection by tapping another subject or region.
+
+These are additive schema-version-1 fields. Existing version-1 JSON decodes with the new fields
+absent, while unknown `selection.kind` values survive round trips for forward compatibility.
 
 ### 5.4 `GuidanceState` — false precision is a type error
 
@@ -363,7 +416,7 @@ public struct GuidanceState: Sendable, Equatable {
     public let planId: String?
     public let cues: [GuidanceCue]                 // pre-sorted, pre-filtered
     public let readiness: Readiness                // .blocked(GuidanceCue) / .close / .ready
-    public let overlay: OverlayModel               // target box, thirds, horizon line, avoid regions
+    public let overlay: OverlayModel               // visual anchor, target frame, horizon, avoid regions
 }
 ```
 
@@ -653,14 +706,18 @@ camera, which makes it the right place to spend the most care.*
 `ForgeCapture` + `ForgeVision` + SwiftUI overlay, driven by `HeuristicDirector`.
 **Exit:** F-01, F-02, F-03, F-07, F-08, F-20, F-30, F-31 verified on device; N-01, N-02 measured and
 recorded; first `.forgesession` recorded and replaying green.
-**This is the first genuinely useful build** — a working composition assistant with zero AI cost.
+This is an engineering scaffold and offline degradation path, not the final product interaction.
+Raw detection bounds may appear in a diagnostics mode, but the production overlay is defined by
+D-6 below.
 
 ### Phase 3 — Real AI Director
 `ForgeBridge` wire protocol, `ForgeDirector` HTTP client (timeouts, retry, budget guard, in-flight
 coalescing), `forge-server` on macOS, `ForgeDirectorCodex`, BYOK Keychain storage, settings UI for
-backend selection.
-**Exit:** F-04, F-05 against a real model; N-03, N-04, N-05, N-10 verified; killing the server
-degrades cleanly to `HeuristicDirector` (F-30) with a visible indicator.
+backend selection, sanitized planning-image input, AI subject/theme selection, local arbitrary-region
+tracking, and the anchor-to-frame composition interaction.
+**Exit:** F-04, F-05, F-12–F-15 against a real model; N-03, N-04, N-05, N-10 verified; a person,
+animal, object, and scene-level theme each complete the same interaction; killing the server degrades
+cleanly to `HeuristicDirector` (F-30) with a visible indicator.
 
 ### Phase 4 — Capture and Review
 Still capture, full-quality retrieval, `ReviewRequest`/`ReviewResult`, retake plan generation, review UI.
@@ -751,6 +808,14 @@ are held to a lower bar.
 
 ## 12. Open Decisions, Verifications, and Risks
 
+### Product decisions confirmed after physical-device validation
+
+| ID | Decision | Rationale |
+|---|---|---|
+| D-5 | The AI Director proposes the photographic subject or scene theme from a selected image; it is not limited to human detections | Photography subjects include animals, objects, architecture, landscape, light, and relationships. Human-only Vision output is an offline scaffold, not product semantics. |
+| D-6 | The production overlay is a two-stage visual-anchor acquisition followed by one target photograph frame; raw current/target subject rectangles are diagnostics only | A detection box describes what the system found, not what photograph to make. A visual anchor and target frame communicate intent directly. |
+| D-7 | Live textual advice is short and display-only | Text can explain the shot, but deterministic structured geometry and typed cues must remain the only control state. |
+
 ### Decisions to confirm before phase 0 closes
 
 | ID | Decision | Recommendation |
@@ -779,6 +844,7 @@ are held to a lower bar.
 | Vendor SDK licensing blocks distribution | External camera mode unshippable as OSS | V-2 early; adapter-not-SDK in-repo; keep `libgphoto2` as plan B (V-4) |
 | Guidance feels jittery or naggy | Product fails its core promise | §6.4 is a first-class feature, not polish; tune against recorded sessions with golden-file diffs |
 | AI latency/cost makes the loop unusable | Directors get bypassed | §6.6 trigger policy + `HeuristicDirector` doing the real-time work; AI is advisory and latched |
+| AI proposes the wrong subject | The user is guided toward a photograph they did not intend | Show the proposal and allow tap-to-replace; rebind local tracking without parsing prose |
 | Metric guidance that is quietly wrong | Users lose trust permanently | §5.4 makes it a type error; §6.5 makes coupling explicit |
 | Abstraction creep | The exact failure `goal.md` §23 warns about | Five protocols (§4.4) as a hard budget; boundary guard in CI |
 | iOS/macOS split doubles the work | Slower delivery | Phases 1–4 are phone-only and deliver a complete product; phase 5 is additive |
@@ -787,8 +853,8 @@ are held to a lower bar.
 
 ## 13. What Ships First
 
-If only one thing gets built: **phases 1 and 2**. A phone app that watches a scene, applies
-deterministic composition rules, and gives stable, honest, non-flickering guidance — with no AI, no
-account, no network, and no external camera — is already useful, is fully testable headlessly, and
-is the substrate every later phase plugs into. Everything after it is a swap of one protocol
-implementation for a better one.
+If only one product experience gets built: **phases 1 through 3**. Phases 1 and 2 remain the local,
+hardware-free substrate and graceful-degradation path. Phase 3 completes the differentiating loop:
+the app understands what in the scene is worth photographing, lets the user accept or replace that
+choice, then guides with a visual anchor, one target frame, and short advice. External-camera and
+automation work remain additive after this phone experience is trustworthy.

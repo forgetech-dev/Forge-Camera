@@ -12,6 +12,28 @@ struct CaptureScreen: View {
     private let formatter = GuidanceCueFormatter()
 
     var body: some View {
+        Group {
+            if case let .failed(error) = model.status {
+                // A camera failure must not leave the app useless. The guidance engine
+                // needs no camera to be worth looking at, so the offline harness takes
+                // over and says plainly why. This is also what a simulator sees, which
+                // makes the core loop demonstrable without hardware.
+                unavailable(error)
+            } else {
+                liveCapture
+            }
+        }
+        .background(Color.black)
+        .preferredColorScheme(.dark)
+        .task {
+            model.start()
+        }
+        .onDisappear {
+            model.stop()
+        }
+    }
+
+    private var liveCapture: some View {
         ZStack {
             CameraPreviewView(source: model.source)
                 .ignoresSafeArea()
@@ -26,13 +48,26 @@ struct CaptureScreen: View {
             }
             .padding()
         }
-        .background(Color.black)
-        .preferredColorScheme(.dark)
-        .task {
-            model.start()
-        }
-        .onDisappear {
-            model.stop()
+    }
+
+    private func unavailable(_ error: CaptureError) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "video.slash")
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No camera available")
+                        .font(.footnote.weight(.semibold))
+                    Text(error.recoverySuggestion ?? "Showing the guidance engine on a test scene.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.regularMaterial)
+
+            GuidancePreviewScreen()
         }
     }
 

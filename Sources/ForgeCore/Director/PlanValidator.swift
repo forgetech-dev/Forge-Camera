@@ -75,6 +75,8 @@ public struct PlanValidator: Sendable {
         var warnings: [Warning] = []
 
         let confidence = unitInterval(plan.confidence, field: "confidence", into: &warnings)
+        let selection = validateSelection(plan.selection, into: &warnings)
+        let framing = validateFraming(plan.framing, into: &warnings)
         let subject = validateSubject(plan.subject, into: &warnings)
         let scene = validateScene(plan.scene, context: context, into: &warnings)
         let camera = validateCamera(plan.camera, context: context, into: &warnings)
@@ -93,6 +95,9 @@ public struct PlanValidator: Sendable {
             intent: plan.intent,
             confidence: confidence,
             rationale: plan.rationale,
+            selection: selection,
+            framing: framing,
+            displayAdvice: plan.displayAdvice,
             subject: subject,
             scene: scene,
             camera: camera,
@@ -103,8 +108,50 @@ public struct PlanValidator: Sendable {
 
         return Result(plan: validated, warnings: warnings)
     }
+}
 
-    // MARK: - Sections
+// MARK: - Sections
+
+private extension PlanValidator {
+    private func validateSelection(
+        _ selection: SubjectSelection?,
+        into warnings: inout [Warning]
+    ) -> SubjectSelection? {
+        guard let selection else { return nil }
+
+        return SubjectSelection(
+            kind: selection.kind,
+            label: selection.label,
+            sourceRegion: normalizedRect(
+                selection.sourceRegion,
+                field: "selection.sourceRegion",
+                into: &warnings
+            ),
+            visualAnchor: normalizedPoint(
+                selection.visualAnchor,
+                field: "selection.visualAnchor",
+                into: &warnings
+            ),
+            confidence: unitInterval(
+                selection.confidence,
+                field: "selection.confidence",
+                into: &warnings
+            )
+        )
+    }
+
+    private func validateFraming(
+        _ framing: FramingPlan?,
+        into warnings: inout [Warning]
+    ) -> FramingPlan? {
+        guard let framing else { return nil }
+        let targetFrame = normalizedRect(
+            framing.targetFrame,
+            field: "framing.targetFrame",
+            into: &warnings
+        )
+        return targetFrame.map { FramingPlan(targetFrame: $0) }
+    }
 
     private func validateSubject(
         _ subject: SubjectPlan?,
@@ -305,6 +352,47 @@ public struct PlanValidator: Sendable {
             return nil
         }
         return value
+    }
+
+    private func normalizedPoint(
+        _ point: NormalizedPoint?,
+        field: String,
+        into warnings: inout [Warning]
+    ) -> NormalizedPoint? {
+        guard let point else { return nil }
+        let x = unitInterval(point.x, field: "\(field).x", into: &warnings)
+        let y = unitInterval(point.y, field: "\(field).y", into: &warnings)
+        guard let x, let y else { return nil }
+        return NormalizedPoint(x: x, y: y)
+    }
+
+    private func normalizedRect(
+        _ rect: NormalizedRect?,
+        field: String,
+        into warnings: inout [Warning]
+    ) -> NormalizedRect? {
+        guard let rect else { return nil }
+        guard rect.x.isUsableNumber, rect.y.isUsableNumber,
+              rect.width.isUsableNumber, rect.height.isUsableNumber
+        else {
+            warnings.append(.init(field: field, reason: "non-finite value"))
+            return nil
+        }
+        guard rect.width > 0, rect.height > 0 else {
+            warnings.append(.init(field: field, reason: "must have positive area"))
+            return nil
+        }
+        guard !rect.isWellFormed else { return rect }
+
+        let clamped = rect.clamped()
+        guard clamped.area > 0 else {
+            warnings.append(.init(field: field, reason: "outside the frame"))
+            return nil
+        }
+        if clamped != rect {
+            warnings.append(.init(field: field, reason: "clamped into the frame"))
+        }
+        return clamped
     }
 
     private func angle(_ value: Angle?, field: String, into warnings: inout [Warning]) -> Angle? {

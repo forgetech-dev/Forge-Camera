@@ -6,7 +6,7 @@
 # `build` and `test` must stay hardware-free forever: no camera, no API key,
 # no network. That is the contributor promise.
 
-.PHONY: help build test check lint format clean skills release project app ios-typecheck boundaries format-check
+.PHONY: help build test check lint format clean skills release project app sim device ios-typecheck boundaries format-check
 
 SWIFT_FLAGS = -Xswiftc -warnings-as-errors
 XCODEGEN_VERSION = 2.46.0
@@ -48,6 +48,30 @@ app: project
 	xcodebuild -project Forge.xcodeproj -scheme ForgePhotographer \
 		-destination 'generic/platform=iOS Simulator' \
 		-configuration Debug build CODE_SIGNING_ALLOWED=NO
+
+# Build and install onto a connected iPhone.
+#
+# Requires FORGE_DEVELOPMENT_TEAM (your free Personal Team id) and Developer Mode
+# enabled on the device. Run the very first install from Xcode instead: it creates
+# the provisioning profile interactively, which this cannot do.
+device: project
+	@if [ -z "$$FORGE_DEVELOPMENT_TEAM" ]; then \
+		echo "FORGE_DEVELOPMENT_TEAM is not set."; \
+		echo "Xcode > Settings > Accounts > + (Apple ID), then:"; \
+		echo "  export FORGE_DEVELOPMENT_TEAM=<your team id>"; \
+		exit 1; \
+	fi
+	xcodebuild -project Forge.xcodeproj -scheme ForgePhotographer \
+		-destination 'generic/platform=iOS' -configuration Debug \
+		-allowProvisioningUpdates build
+	@echo "Built. Install and run from Xcode, or:"
+	@echo "  xcrun devicectl device install app --device <udid> <path/to/ForgePhotographer.app>"
+
+# Build, install, launch, and capture the app on a simulator without opening
+# Simulator.app — works over SSH with no display. FORGE_SIM_DEVICE overrides the
+# device; pass ARGS="--video 8" to record instead of screenshot.
+sim:
+	@./Tools/sim.sh $(ARGS)
 
 # Verifies the iOS graph without xcodebuild, so a machine missing the installed iOS
 # platform can still prove the app compiles under the app target's own settings.

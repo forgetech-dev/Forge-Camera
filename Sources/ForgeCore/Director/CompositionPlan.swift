@@ -22,6 +22,14 @@ public struct CompositionPlan: Sendable, Equatable, Codable {
     /// **Display-only.** No engine, view model, or test may branch on its content.
     /// This is the enforcement of "free-text AI responses are never application state".
     public let rationale: String?
+    /// What the Director proposes the photograph should be about.
+    public let selection: SubjectSelection?
+    /// The proposed photograph boundary, independent of any detection bounds.
+    public let framing: FramingPlan?
+    /// Short, display-only suggestions for the live view.
+    ///
+    /// No engine, view model, or test may branch on their wording.
+    public let displayAdvice: [String]?
     public let subject: SubjectPlan?
     public let scene: ScenePlan?
     public let camera: CameraPlan?
@@ -37,6 +45,9 @@ public struct CompositionPlan: Sendable, Equatable, Codable {
         intent: PhotographicIntent,
         confidence: Double? = nil,
         rationale: String? = nil,
+        selection: SubjectSelection? = nil,
+        framing: FramingPlan? = nil,
+        displayAdvice: [String]? = nil,
         subject: SubjectPlan? = nil,
         scene: ScenePlan? = nil,
         camera: CameraPlan? = nil,
@@ -50,6 +61,9 @@ public struct CompositionPlan: Sendable, Equatable, Codable {
         self.intent = intent
         self.confidence = confidence
         self.rationale = rationale
+        self.selection = selection
+        self.framing = framing
+        self.displayAdvice = displayAdvice
         self.subject = subject
         self.scene = scene
         self.camera = camera
@@ -70,6 +84,86 @@ public struct CompositionPlan: Sendable, Equatable, Codable {
 }
 
 // MARK: - Plan sections
+
+/// A Director-selected photographic subject or scene theme in the planning image.
+///
+/// `sourceRegion` and `visualAnchor` seed local tracking. The AI does not provide the
+/// runtime `SubjectID`; local perception owns identity after the selection is accepted.
+public struct SubjectSelection: Sendable, Equatable, Codable {
+    public let kind: PhotographicSubjectKind
+    /// A human-readable name such as "cat" or "window light".
+    ///
+    /// Display-only. Application logic must use `kind` and geometry instead.
+    public let label: String?
+    /// Region containing the selection in Forge normalized planning-image space.
+    /// A scene-level theme may legitimately have no discrete region.
+    public let sourceRegion: NormalizedRect?
+    /// The compositional attention point in Forge normalized planning-image space.
+    /// This is not automatically an autofocus point.
+    public let visualAnchor: NormalizedPoint?
+    public let confidence: Double?
+
+    public init(
+        kind: PhotographicSubjectKind,
+        label: String? = nil,
+        sourceRegion: NormalizedRect? = nil,
+        visualAnchor: NormalizedPoint? = nil,
+        confidence: Double? = nil
+    ) {
+        self.kind = kind
+        self.label = label
+        self.sourceRegion = sourceRegion
+        self.visualAnchor = visualAnchor
+        self.confidence = confidence
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, label, sourceRegion, visualAnchor, confidence
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(PhotographicSubjectKind.self, forKey: .kind)
+        label = try container.decodeIfPresent(String.self, forKey: .label)
+        sourceRegion = try container.decodeIfPresent(NormalizedRect.self, forKey: .sourceRegion)
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence)
+
+        if container.contains(.visualAnchor), try !container.decodeNil(forKey: .visualAnchor) {
+            var point = try container.nestedUnkeyedContainer(forKey: .visualAnchor)
+            let x = try point.decode(Double.self)
+            let y = try point.decode(Double.self)
+            visualAnchor = NormalizedPoint(x: x, y: y)
+        } else {
+            visualAnchor = nil
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(label, forKey: .label)
+        try container.encodeIfPresent(sourceRegion, forKey: .sourceRegion)
+        try container.encodeIfPresent(confidence, forKey: .confidence)
+        if let visualAnchor {
+            var point = container.nestedUnkeyedContainer(forKey: .visualAnchor)
+            try point.encode(visualAnchor.x)
+            try point.encode(visualAnchor.y)
+        }
+    }
+}
+
+/// The boundary of the photograph the Director proposes making.
+public struct FramingPlan: Sendable, Equatable, Codable {
+    /// Target photograph boundary in Forge normalized planning-image space.
+    ///
+    /// This is deliberately independent of `SubjectSelection.sourceRegion`: one says
+    /// what was selected, while the other says what the final photograph should include.
+    public let targetFrame: NormalizedRect?
+
+    public init(targetFrame: NormalizedRect? = nil) {
+        self.targetFrame = targetFrame
+    }
+}
 
 public struct SubjectPlan: Sendable, Equatable, Codable {
     /// Target horizontal position of the subject's centre, in Forge normalized space.
@@ -178,6 +272,44 @@ public struct CapturePlan: Sendable, Equatable, Codable {
 //
 // Unknown values decode to `.unknown` and are ignored by engines, so a director can
 // introduce a new intent without a schema bump and without breaking older clients.
+
+/// The broad photographic role of the Director's selected subject or theme.
+public enum PhotographicSubjectKind: Sendable, Equatable, Codable, RawRepresentable {
+    case person
+    case animal
+    case object
+    case place
+    case scene
+    case light
+    case relationship
+    case unknown(String)
+
+    public init(rawValue: String) {
+        switch rawValue {
+        case "person": self = .person
+        case "animal": self = .animal
+        case "object": self = .object
+        case "place": self = .place
+        case "scene": self = .scene
+        case "light": self = .light
+        case "relationship": self = .relationship
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    public var rawValue: String {
+        switch self {
+        case .person: "person"
+        case .animal: "animal"
+        case .object: "object"
+        case .place: "place"
+        case .scene: "scene"
+        case .light: "light"
+        case .relationship: "relationship"
+        case let .unknown(raw): raw
+        }
+    }
+}
 
 public enum PhotographicIntent: Sendable, Equatable, Codable, RawRepresentable {
     case portrait
@@ -334,11 +466,12 @@ public extension Angle {
     }
 }
 
-// MARK: - Rect coding
+// MARK: - Normalized geometry coding
 
 //
-// Regions travel as [x, y, width, height] arrays, which is what a model produces
-// most reliably.
+// Plan regions travel as compact arrays, which is what a model produces most
+// reliably. `SubjectSelection` owns the same compact representation for its anchor;
+// the domain-wide `NormalizedPoint` coding used by recorded scene state is unchanged.
 
 public extension NormalizedRect {
     init(from decoder: any Decoder) throws {

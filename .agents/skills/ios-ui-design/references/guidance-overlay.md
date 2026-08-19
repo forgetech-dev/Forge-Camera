@@ -3,7 +3,7 @@
 **Purpose.** The guidance overlay is the product. This file specifies how it behaves visually, so
 the treatment stays consistent as features are added.
 
-**Last verified:** 2026-08-15.
+**Last verified:** 2026-08-18.
 
 ---
 
@@ -72,17 +72,40 @@ An arrow's **length encodes magnitude** and its **direction encodes axis**. Both
   a depth chevron — so it is never confused with lateral movement.
 - Rotation cues use an arc, never a straight arrow.
 
-## Target-and-gap
+## AI Compose interaction — visual anchor, then target frame
 
-Always show the goal, not only the error. The user should see where the subject *should* be and
-where it *is*, simultaneously:
+Physical-device validation replaced the original two-subject-box presentation. Raw detection bounds
+answer "what did the detector find?"; they do not answer "what photograph should I make?" They are
+diagnostics and are off in the production interface.
 
-- Target subject placement: a target rectangle or crosshair at the plan's position and scale.
-- Current subject: a lighter indication of the detected bounds.
-- Horizon: a target line plus the current horizon when they differ meaningfully.
+The production interaction has two spatial stages:
 
-This lets the user solve the problem themselves rather than following instructions one at a time,
-which is faster and feels like assistance rather than remote control.
+1. **Acquire the AI selection.** A fixed optical-centre reticle represents where the camera is aimed.
+   A distinct visual-anchor marker identifies the compositional attention point chosen by the
+   Director — for example, a cat's eyes, a person's face, or an architectural vanishing point. The
+   user brings the two together to acquire the proposed subject or region. This is not yet the final
+   composition, and the visual anchor is not automatically an autofocus point.
+2. **Compose the photograph.** Once local tracking is stable, replace acquisition emphasis with one
+   target photograph frame. Subdue content outside it with a restrained scrim. The frame describes
+   the desired photograph boundary; it is never derived from or presented as a subject bounding box.
+
+The user can tap a different subject or region to replace the AI proposal. The new choice rebinds
+local tracking; it does not require parsing any text.
+
+Horizon and other spatial cues may coexist only when they materially help and remain within the cue
+budget. Preview mapping must account for aspect-fill cropping, rotation, and mirroring; multiplying
+normalized coordinates by SwiftUI view size is valid only when preview and view share an aspect
+ratio.
+
+## Short shot advice
+
+The Director may provide a concise, display-only explanation such as a subject/theme label plus one
+current suggestion. Keep it to at most two short lines over the live preview. It appears on a system
+material near an edge, never as a paragraph over the subject, and collapses once the user has
+understood the plan.
+
+Structured geometry and typed cues remain the only application state. The UI may display
+`rationale` or `displayAdvice`; no engine or view model may branch on their wording.
 
 ## Stability
 
@@ -120,6 +143,8 @@ Per `goal.md` §17, these are normal states and each needs a visual:
 - Setting not writable by the app → cue is addressed to the user as a manual adjustment, visually
   distinct from cues the app can act on.
 - Plan stale or in-flight → indicate plan freshness subtly; never block on it.
+- No clear subject/theme → say that the system is unsure and invite the user to tap a subject or
+  reframe; never invent a confident target frame.
 
 ## Open questions
 

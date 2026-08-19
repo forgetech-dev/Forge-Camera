@@ -70,7 +70,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.forge.photographer
         TARGETED_DEVICE_FAMILY: "1,2"
-        # Free "Personal Team" signing works for development. Set DEVELOPMENT_TEAM
-        # locally rather than committing a team id.
+        # Free "Personal Team" signing is enough for development on your own device.
+        # The team id comes from the environment so it never lands in the repo:
+        #   export FORGE_DEVELOPMENT_TEAM=XXXXXXXXXX
+        # Leaving it unset is fine for simulator builds, which need no signing.
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ${FORGE_DEVELOPMENT_TEAM}
         GENERATE_INFOPLIST_FILE: NO

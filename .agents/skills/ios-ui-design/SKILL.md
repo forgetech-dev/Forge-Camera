@@ -4,7 +4,7 @@ description: Design and build AI Photographer's SwiftUI interface as a professio
 license: Apache-2.0
 metadata:
   project: ai-photographer
-  last_verified: "2026-08-15"
+  last_verified: "2026-08-18"
   platform: "iOS 18+, SwiftUI"
 ---
 
@@ -65,9 +65,11 @@ Summary: at most one cue per actor (photographer / subject / camera), at most th
 one arrow-or-target plus a very short label. Never a sentence.
 
 ### Subject placement guides
-Show the *target*, not just the error: a target rectangle or crosshair where the subject should be,
-plus the current bounding indication. The user should see the goal and the gap simultaneously. Thirds
-grid is a toggle, off by default, and visually quieter than the AI target.
+In production AI Compose, first show the fixed optical-centre reticle and the Director's visual
+anchor so the user can acquire the proposed subject or region. Once tracking is stable, show one
+target photograph frame and subdue excluded content. Raw detection bounds and current/target subject
+rectangles are diagnostics, off by default; they describe detector output rather than photographic
+intent. Thirds grid is a toggle, off by default, and visually quieter than the AI target.
 
 ### Pose overlays
 Skeleton overlays are diagnostic, not directive. Default them off. When guidance concerns pose, show

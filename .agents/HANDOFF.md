@@ -13,14 +13,14 @@ link to it instead of copying it.
 
 ## Current state
 
-**Last updated:** 2026-08-16 · **Phase:** 1 complete, 2 vertical slice closed
+**Last updated:** 2026-08-18 · **Phase:** 1 complete, 2 vertical slice closed; Phase 3 contract slice complete
 
 | | |
 |---|---|
-| Tests | 160, all passing |
+| Tests | 164, all passing |
 | `make check` | Passing (format, lint, build, test, skills, boundaries) |
 | CI | Run #7 failed on a Swift 6.1 unused-result error and a boundaries fixture mismatch; both addressed locally, not yet re-pushed. |
-| Hardware needed | None. `make build && make test` works on a clean clone with no camera, key, or network. |
+| Device status | The user installed the app on an iPhone and confirmed live preview, Vision output, and guidance rendering. Quantitative N-01/N-02 measurements and broad device coverage remain undone. |
 
 ### Built and verified
 
@@ -28,8 +28,9 @@ link to it instead of copying it.
 
 - **Domain**: `NormalizedPoint`/`NormalizedRect` (top-left origin, y down), `Angle`,
   `FieldOfView`, `Measured<T>` with provenance, `SceneState` and detection types.
-- **Director**: `CompositionPlan` + `PlanValidator` (field-level degradation),
-  `DirectorProvider`, `HeuristicDirector`, `PlanTrigger`.
+- **Director**: `CompositionPlan` + `PlanValidator` (field-level degradation), including additive
+  schema-v1 subject/theme selection, source region, visual anchor, target photograph frame, and
+  display-only advice; `DirectorProvider`, `HeuristicDirector`, `PlanTrigger`.
 - **Guidance**: `GuidanceState`, `GuidanceEngine` (+`GuidanceEngine+Cues`),
   `GuidanceCueFormatter`.
 - **Exposure**: `ExposureCapabilities`, `ExposureEngine`.
@@ -48,8 +49,9 @@ without depending on `ForgeCapture`.
 `ForgeVision` — on-device perception. `VisionSceneAnalyzer` batches human-rectangle and
 body-pose requests through one `ImageRequestHandler`, converts all Vision geometry into Forge
 normalized space at the boundary, drops low-confidence joints, and matches each pose to a person by
-joint centroid. `SubjectTracker` assigns stable identities by nearest-centre matching with a gate
-and a missing-frame tolerance, so guidance does not jump between people.
+joint centroid. `SubjectTracker` assigns identities by nearest-centre matching with a gate, but its
+declared missing-frame tolerance does not retain bounds in the returned scene; a one-frame miss still
+removes the visible subject and can break identity recovery. Treat tracking stability as unfinished.
 
 `CapturePipeline` (in `ForgeCore`) — the spine. Frames in, guidance out, with the three rates kept
 separate: analysis per frame, planning on the trigger policy, guidance recomputed every frame from
@@ -77,40 +79,56 @@ with `cameraUnavailable` because a simulator has no camera, and the HUD shows th
 layer. Earlier, the synthetic harness showed the guidance chain rendering with the deadband
 correctly suppressing the two in-tolerance cues.
 
+Verified qualitatively on a physical iPhone by the user: the camera preview runs, Vision sometimes
+reports one person, and the current white-detection/yellow-target overlay plus text cue render. That
+test also exposed the product and implementation gaps recorded in D-5–D-7: human-only perception,
+raw two-box guidance, per-frame flicker, oversized target geometry, and an aspect-fill mapping error.
+
 ### Not built yet
 
-No session recorder, and **no device verification of anything camera-related**. The simulator has no
-camera, so live frames, Vision throughput, tracking quality, preview latency, and every performance
-budget (N-01, N-02) remain unmeasured. Treat F-01/F-02/F-03 as implemented but unproven on hardware.
+No session recorder. Basic device operation is now observed, but Vision throughput, tracking quality,
+preview/guidance alignment, latency, and every performance budget (N-01, N-02) remain unmeasured.
+F-01/F-02 are qualitatively proven on one device; F-03 is not satisfied because dropout stability is
+not working as intended.
 
 Everything from Phase 3 onward remains unbuilt: network director, Mac bridge, capture and review
 loop, and all external-camera work. Horizon, lighting, and device motion are still `nil` in
 `SceneState` — `VisionSceneAnalyzer` reports subjects only, so levelling and exposure guidance have
 no input yet. CoreMotion gravity is the cheap next win there.
 
+The newly confirmed Phase 3 product interaction is still mostly unbuilt. Its core plan contract and
+validation now exist, but selected planning-image input, a real image-capable AI provider, user
+override, local arbitrary-region tracking, visual-anchor acquisition, and target-frame rendering do
+not. Display advice is stored safely but is not shown by the app yet.
+
 ---
 
 ## In flight
 
-**Uncommitted work** — the Phase 2 vertical slice plus the CI fix. All four local gates pass
-(`make check`, `make ios-typecheck`, `make app`, 159 tests). Nothing is committed.
+**Uncommitted work exists.** Preserve the existing app/tooling changes in `App/CaptureScreen.swift`,
+`Makefile`, `project.yml`, and `Tools/sim.sh`; they predate the D-5–D-7 work. The contract slice also
+changes `CompositionPlan`, `PlanValidator`, fixtures, tests, boundary guards, documentation, and
+project skill references. Do not discard or conflate the two groups when reviewing or committing.
 
 **The CI fix must be pushed.** The last run failed on a Swift 6.1 dead-code error in
 `AVFoundationFrameSource+Lifecycle.swift`; it is fixed but unpushed, so CI is still red.
 
 **Next task, in order:**
 
-1. ~~Permission/lifecycle seam plus hardware-free lifecycle tests.~~ **Done.**
-2. ~~Session-driven preview bridge.~~ **Done** — `CameraPreviewView` + `CaptureScreen`.
-3. ~~`ForgeVision` and a real-frame composition root.~~ **Done** — `CaptureModel` + `CapturePipeline`.
-4. **Run it on a physical device.** Everything camera-related is unverified: no live frame has been
-   analyzed, and N-01/N-02 are unmeasured. This is now the highest-value next step and needs free
-   Apple ID signing set up.
-5. Feed `SceneState.horizon` from CoreMotion gravity, and `lighting` from frame statistics. Both are
-   cheap, and levelling is the one cue that is metric-accurate without depth — it currently never
-   fires because `horizon` is always `nil`.
-6. Add a session recorder so real captures become replay fixtures (N-09 has the machinery but no
-   real-world sessions).
+1. ~~Record the physical-device product decision before changing code.~~ **Done** — see `plan.md`
+   D-5–D-7 and the updated Director/UI skill references.
+2. ~~Make the contract change first: structured selection, anchor, frame, advice, validation,
+   fixtures, and boundary guards.~~ **Done** as additive schema version 1; 164 tests pass.
+3. **Next small slice:** carry `visualAnchor`, `targetFrame`, and `displayAdvice` into presentation
+   state and render them from a deterministic fixture in the synthetic preview. Do not connect AI
+   yet; this should prove the app-side interaction and coordinate contract in isolation.
+4. Add the privacy-sanitized selected-frame path to `DirectorRequest` and a real image-capable
+   Director provider; preserve structured-state-only degradation.
+5. Initialize local arbitrary-region tracking from the AI selection and support tap-to-replace.
+6. Replace the production two-box overlay with the two-stage anchor-acquisition → target-frame UI.
+   Keep raw detection boxes behind diagnostics only and fix preview-layer coordinate conversion.
+7. Record and replay real sessions, then measure N-01/N-02 and tune stability. CoreMotion horizon and
+   frame-statistics lighting follow once the new core composition loop is trustworthy.
 
 The stale-buffered-frame limitation is **resolved and discharged**: `CapturePipeline.run()` applies
 `source.isCurrent(frame)` before analysis and counts rejections in `framesDroppedAsStale`.
@@ -161,6 +179,10 @@ survives, not just the conclusion.
 | D-2 | **Apache-2.0** over MIT | Express patent grant, which matters for computational photography and camera control. Swift ecosystem norm. |
 | D-3 | **iOS 18 / macOS 15**, Swift 6 language mode | Unlocks the modern Vision Swift API, which is async/Sendable-native and avoids wrapping completion-handler `VNRequest` code under strict concurrency. |
 | D-4 | Camera bridge: HTTP + MJPEG over Bonjour first | Debuggable with `curl`, no dependencies. Revisit only if measurement shows latency is the bottleneck. |
+| D-5 | The Director proposes the photographic subject or scene theme from a selected planning image; it is not limited to human detections | A valid subject can be a person, animal, object, place, scene, light, or relationship. AI chooses at planning cadence; local perception tracks at frame cadence. See `plan.md` §5.3. |
+| D-6 | Production guidance uses visual-anchor acquisition followed by one target photograph frame; current/target detection rectangles are diagnostics only | Detection bounds explain the detector, not the intended photograph. The target frame must be independent of subject bounds and mapped through preview cropping. |
+| D-7 | Short AI shot advice is display-only | It may explain the plan in a compact popup, but structured geometry and typed cues are the only control state. |
+| D-8 | Subject selection, target framing, and display advice are additive optional fields in `CompositionPlan` schema version 1 | Existing v1 plans decode unchanged; no version bump is needed for optional data older clients already ignore. Unknown subject kinds remain round-trip safe. |
 | — | Canonical skills in `.agents/skills/`, **no `.codex/skills/`** | Codex scans `.agents/skills` and `.codex/skills` as separate roots and does **not** deduplicate — a skill reachable from both is listed twice. Verified against Codex 0.144.6. |
 | — | gitleaks **CLI** in CI, not `gitleaks-action` | The action needs a licence key for org-owned repos (free for one repo, paid beyond). The CLI is MIT with no key. Version and SHA-256 both pinned. |
 | — | `GuidanceCueFormatter` lives in `ForgeCore`, not the app | Pure, no UI dependency, and it is the single point where "never fabricate precision" becomes visible text. In the package, `swift test` covers it everywhere. |
@@ -265,12 +287,50 @@ eight. `PlanningMode.synchronous` exists for replay and regression work (N-09); 
 `CheckedContinuation` silently dropped all but the last concurrent caller, and the suite hung
 instead of failing. Test doubles for concurrent code need a waiter list.
 
+**Aspect-fill preview coordinates are not SwiftUI view coordinates.** `CameraPreviewView` uses
+`.resizeAspectFill`, while the current `GuidanceOverlayView` multiplies Forge-normalized coordinates
+by the full SwiftUI size. That is wrong whenever the preview is cropped and was visible on device as
+misaligned/oversized guidance. The new anchor and target-frame overlay must convert through the
+preview layer (or an explicitly tested visible-rect transform), including rotation and mirroring.
+
+**The current missing-frame tolerance does not stabilize output.** `SubjectTracker` increments a
+missing counter but returns only detections from the current frame. On the first Vision miss the
+subject disappears from `SceneState`; on the next frame the previous scene is empty, so the old
+identity cannot be matched. Do not tune the tolerance constant and assume flicker is fixed — the
+tracking state model itself must retain the last observation with an explicit stale/confidence rule.
+
 ---
 
 ## Session log
 
 Newest first. One entry per working session. Keep entries short — what changed and what
 the next agent needs to know, not a narrative.
+
+### 2026-08-18 · Codex (GPT-5) — agile slice 1: composition contract
+
+- Added schema-v1 `SubjectSelection`, forward-compatible `PhotographicSubjectKind`,
+  `FramingPlan.targetFrame`, and display-only advice without changing existing callers or JSON.
+- Extended field-level validation: anchors/confidence clamp; invalid rectangles drop; partially
+  visible rectangles clip; already-valid geometry passes through exactly to avoid floating drift.
+- Added fixtures, compact-wire/compatibility/degradation/round-trip tests, and static guards against
+  branching on display-only advice or labels. 160 → 164 tests.
+- `make check` and `make ios-typecheck` pass. No app UI or AI provider was changed in this slice.
+- Next: deterministic app-side rendering of anchor → frame → advice from a fixture, then stop for
+  device/simulator review before connecting a real image-capable Director.
+
+### 2026-08-18 · Codex (GPT-5) — AI composition direction record
+
+Recorded the user's physical-device product correction before touching implementation code.
+
+- The app now has qualitative iPhone verification: live preview, human detection, overlay, and text
+  cues render. The test exposed human-only semantics, unstable raw boxes, target geometry coupled to
+  a bad detection, and incorrect aspect-fill overlay mapping.
+- Confirmed D-5–D-7: AI proposes any photographic subject or scene theme from a selected image;
+  local code tracks it; production UI acquires a visual anchor and then shows one target photograph
+  frame; short prose is display-only.
+- Updated `plan.md`, the `CompositionPlan` reference, and the guidance-overlay reference so future
+  agents do not implement against the superseded two-box interaction.
+- No production Swift was changed. Next is the contract-first step in the In flight list.
 
 ### 2026-08-16 · Claude Code (Opus 5) — session 3
 

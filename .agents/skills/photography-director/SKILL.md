@@ -4,7 +4,7 @@ description: Photographic reasoning and AI planning for AI Photographer — deci
 license: Apache-2.0
 metadata:
   project: ai-photographer
-  last_verified: "2026-08-15"
+  last_verified: "2026-08-18"
 ---
 
 # AI Photography Director
@@ -34,9 +34,16 @@ or on `HeuristicDirector`.
 
 > **Free-text AI responses are never application state.** (`goal.md` §23)
 
-The Director returns a validated `CompositionPlan`. Every field is typed. The one prose field,
-`rationale`, is **display-only**: it is shown to the user and **no engine, view model, or test may
-branch on its content**. That is the enforcement mechanism, and it is checkable in review.
+The Director returns a validated `CompositionPlan`. Every control field is typed. Prose fields such
+as `rationale` — and the planned subject label / short display advice — are **display-only**: they are
+shown to the user and **no engine, view model, or test may branch on their content**. That is the
+enforcement mechanism, and it is checkable in review.
+
+The Director is also responsible for proposing what the photograph is about. It may select a person,
+animal, object, place, relationship, or scene-level theme from one planning image. It emits a
+structured source region / visual anchor / target photograph frame; local perception resolves that
+selection into runtime tracking identity and follows it at frame rate. Human detection is one input,
+not the definition of a photographic subject.
 
 Schema, field semantics, validation rules, and the unit decisions that `goal.md`'s example leaves
 ambiguous are in [references/plan-schema.md](references/plan-schema.md). Two that matter most:
