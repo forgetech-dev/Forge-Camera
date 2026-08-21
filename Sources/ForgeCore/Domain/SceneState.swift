@@ -226,6 +226,23 @@ public struct CameraState: Sendable, Equatable, Codable {
     }
 }
 
+/// One frame's local, image-space tracking result for an AI-selected region.
+///
+/// A non-`nil` value with `bounds == nil` means tracking was attempted for this
+/// generation but no trustworthy region was produced. This is distinct from `nil`,
+/// which means no selection tracker is active.
+public struct SelectionTrackingObservation: Sendable, Equatable, Codable {
+    public let trackingID: UInt64
+    public let bounds: NormalizedRect?
+    public let confidence: Double
+
+    public init(trackingID: UInt64, bounds: NormalizedRect?, confidence: Double) {
+        self.trackingID = trackingID
+        self.bounds = bounds
+        self.confidence = confidence.clampedToUnitInterval
+    }
+}
+
 /// Everything local perception knows about one frame.
 ///
 /// Produced at frame rate by a `SceneAnalyzer`, consumed by the guidance engine and,
@@ -240,6 +257,8 @@ public struct SceneState: Sendable, Equatable, Codable {
     public let lighting: LightingEstimate?
     public let motion: DeviceMotionState?
     public let camera: CameraState?
+    /// Image-space tracking of the current AI selection, if one is active.
+    public let selectionTracking: SelectionTrackingObservation?
 
     public init(
         timestamp: TimeInterval,
@@ -248,7 +267,8 @@ public struct SceneState: Sendable, Equatable, Codable {
         horizon: HorizonEstimate? = nil,
         lighting: LightingEstimate? = nil,
         motion: DeviceMotionState? = nil,
-        camera: CameraState? = nil
+        camera: CameraState? = nil,
+        selectionTracking: SelectionTrackingObservation? = nil
     ) {
         self.timestamp = timestamp
         self.frame = frame
@@ -257,6 +277,7 @@ public struct SceneState: Sendable, Equatable, Codable {
         self.lighting = lighting
         self.motion = motion
         self.camera = camera
+        self.selectionTracking = selectionTracking
     }
 
     /// The subject guidance is currently about: the most salient one.

@@ -12,7 +12,7 @@ import Vision
 /// origin with y increasing upward; the domain uses a top-left origin with y
 /// increasing downward. Every coordinate crossing this type is flipped exactly once,
 /// here, so nothing downstream has to know Vision's convention exists.
-public struct VisionSceneAnalyzer: SceneAnalyzer {
+public actor VisionSceneAnalyzer: SceneAnalyzer {
     public typealias FrameContent = PixelBufferFrame
 
     public struct Options: Sendable {
@@ -22,15 +22,19 @@ public struct VisionSceneAnalyzer: SceneAnalyzer {
         public var minimumJointConfidence: Float
         /// Whether to run the more expensive body-pose request.
         public var detectsBodyPose: Bool
+        /// Minimum confidence for retaining the AI-selected region tracker.
+        public var minimumSelectionTrackingConfidence: Float
 
         public init(
             minimumSubjectConfidence: Float = 0.3,
             minimumJointConfidence: Float = 0.2,
-            detectsBodyPose: Bool = true
+            detectsBodyPose: Bool = true,
+            minimumSelectionTrackingConfidence: Float = 0.3
         ) {
             self.minimumSubjectConfidence = minimumSubjectConfidence
             self.minimumJointConfidence = minimumJointConfidence
             self.detectsBodyPose = detectsBodyPose
+            self.minimumSelectionTrackingConfidence = minimumSelectionTrackingConfidence
         }
 
         public static let `default` = Options()
@@ -38,23 +42,55 @@ public struct VisionSceneAnalyzer: SceneAnalyzer {
 
     private let options: Options
     private let tracker: SubjectTracker
+    private var selectionTracking: ActiveSelectionTracking?
+
+    private struct ActiveSelectionTracking {
+        let id: UInt64
+        let request: TrackObjectRequest
+    }
+
+    private struct DetectionResult {
+        let subjects: [SubjectObservation]
+        let selectionTracking: SelectionTrackingObservation?
+    }
 
     public init(options: Options = .default) {
         self.options = options
         tracker = SubjectTracker()
     }
 
+    /// Starts local tracking from the AI plan's selected source region.
+    ///
+    /// The region is image-space only. This does not claim a world coordinate or a
+    /// physical distance; it simply follows the pixels that described the selection.
+    public func beginSelectionTracking(id: UInt64, region: ForgeCore.NormalizedRect) {
+        guard region.isWellFormed, region.width > 0, region.height > 0 else {
+            selectionTracking = nil
+            return
+        }
+
+        let seed = DetectedObjectObservation(boundingBox: region.visionRect)
+        selectionTracking = ActiveSelectionTracking(
+            id: id,
+            request: TrackObjectRequest(detectedObject: seed)
+        )
+    }
+
+    public func clearSelectionTracking() {
+        selectionTracking = nil
+    }
+
     public func analyze(
         _ frame: SceneFrame<PixelBufferFrame>,
         previous: SceneState?
     ) async -> SceneState {
-        let observations = await detect(in: frame.content)
+        let detection = await detect(in: frame.content)
 
         // Identity is assigned here rather than by Vision: guidance that jumps
         // between people is worse than no guidance, so a detection has to be matched
         // to whoever it most plausibly continues.
         let subjects = await tracker.track(
-            observations,
+            detection.subjects,
             previous: previous?.subjects ?? [],
             minimumConfidence: options.minimumSubjectConfidence
         )
@@ -66,7 +102,8 @@ public struct VisionSceneAnalyzer: SceneAnalyzer {
             horizon: nil,
             lighting: nil,
             motion: nil,
-            camera: nil
+            camera: nil,
+            selectionTracking: detection.selectionTracking
         )
     }
 
@@ -74,7 +111,7 @@ public struct VisionSceneAnalyzer: SceneAnalyzer {
 
     /// One handler, every request. Vision shares work across requests in a single
     /// pass, so batching costs less than issuing them separately.
-    private func detect(in content: PixelBufferFrame) async -> [SubjectObservation] {
+    private func detect(in content: PixelBufferFrame) async -> DetectionResult {
         let handler = ImageRequestHandler(content.pixelBuffer)
         // The buffer is already orientation-corrected at the capture boundary, so no
         // further orientation is declared here.
@@ -87,16 +124,83 @@ public struct VisionSceneAnalyzer: SceneAnalyzer {
         do {
             if options.detectsBodyPose {
                 let poseRequest = DetectHumanBodyPoseRequest()
+                if let activeTracking = selectionTracking {
+                    let (humans, poses, trackedSelection) = try await handler.perform(
+                        humanRequest,
+                        poseRequest,
+                        activeTracking.request
+                    )
+                    return DetectionResult(
+                        subjects: merge(humans: humans, poses: poses),
+                        selectionTracking: consume(
+                            trackedSelection,
+                            for: activeTracking.id
+                        )
+                    )
+                }
                 let (humans, poses) = try await handler.perform(humanRequest, poseRequest)
-                return merge(humans: humans, poses: poses)
+                return DetectionResult(
+                    subjects: merge(humans: humans, poses: poses),
+                    selectionTracking: nil
+                )
+            }
+
+            if let activeTracking = selectionTracking {
+                let (humans, trackedSelection) = try await handler.perform(
+                    humanRequest,
+                    activeTracking.request
+                )
+                return DetectionResult(
+                    subjects: merge(humans: humans, poses: []),
+                    selectionTracking: consume(trackedSelection, for: activeTracking.id)
+                )
             }
             let humans = try await handler.perform(humanRequest)
-            return merge(humans: humans, poses: [])
+            return DetectionResult(
+                subjects: merge(humans: humans, poses: []),
+                selectionTracking: nil
+            )
         } catch {
             // A frame that cannot be analyzed yields an empty scene rather than
             // stopping the pipeline. The next frame is a fraction of a second away.
-            return []
+            let failedTracking = consumeFailedSelectionTracking()
+            return DetectionResult(subjects: [], selectionTracking: failedTracking)
         }
+    }
+
+    private func consumeFailedSelectionTracking() -> SelectionTrackingObservation? {
+        guard let trackingID = selectionTracking?.id else { return nil }
+        return consume(nil, for: trackingID)
+    }
+
+    /// Accepts a result only if it still belongs to the active generation. Actor
+    /// reentrancy allows a newer plan to arrive while Vision is processing a frame;
+    /// an older result must never replace that newer track.
+    private func consume(
+        _ observation: DetectedObjectObservation?,
+        for trackingID: UInt64
+    ) -> SelectionTrackingObservation? {
+        guard let activeTracking = selectionTracking,
+              activeTracking.id == trackingID
+        else {
+            return nil
+        }
+
+        guard let observation,
+              observation.confidence >= options.minimumSelectionTrackingConfidence
+        else {
+            return SelectionTrackingObservation(
+                trackingID: trackingID,
+                bounds: nil,
+                confidence: 0
+            )
+        }
+
+        return SelectionTrackingObservation(
+            trackingID: trackingID,
+            bounds: observation.boundingBox.forgeRect,
+            confidence: Double(observation.confidence)
+        )
     }
 
     /// Vision does not correlate the outputs of two requests, so the pose belonging to

@@ -80,4 +80,16 @@ struct VisionGeometryTests {
         #expect(abs(forge.minX) < 1e-9)
         #expect(abs(forge.maxY - 1) < 1e-9)
     }
+
+    @Test("Forge and Vision rect conversion round-trips")
+    func forgeRectRoundTrips() {
+        let forge = ForgeCore.NormalizedRect(x: 0.13, y: 0.27, width: 0.41, height: 0.19)
+
+        let roundTripped = forge.visionRect.forgeRect
+
+        #expect(abs(roundTripped.x - forge.x) < 1e-9)
+        #expect(abs(roundTripped.y - forge.y) < 1e-9)
+        #expect(abs(roundTripped.width - forge.width) < 1e-9)
+        #expect(abs(roundTripped.height - forge.height) < 1e-9)
+    }
 }

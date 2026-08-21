@@ -44,6 +44,13 @@ struct CodexDirectorSpikeTests {
 
         #expect(invocation.arguments.contains("--ephemeral"))
         #expect(invocation.arguments.contains("--ignore-user-config"))
+        #expect(argumentValue(after: "--model", in: invocation.arguments) == "gpt-5.6-luna")
+        #expect(
+            argumentValue(after: "--config", in: invocation.arguments)
+                == #"model_verbosity="low""#
+        )
+        #expect(invocation.arguments.contains("features.fast_mode=true"))
+        #expect(invocation.arguments.contains(#"service_tier="fast""#))
         #expect(invocation.arguments.contains("read-only"))
         #expect(invocation.arguments.contains("--output-schema"))
         #expect(invocation.arguments.contains("--output-last-message"))

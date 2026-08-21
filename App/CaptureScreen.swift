@@ -39,7 +39,7 @@ struct CaptureScreen: View {
             GuidanceOverlayView(
                 guidance: model.guidance,
                 frameGeometry: model.frameGeometry,
-                targetFrame: model.directorPlan?.framing?.targetFrame,
+                targetFrame: model.directorTargetFrame,
                 previewMirrored: false
             )
             .ignoresSafeArea()
@@ -48,7 +48,7 @@ struct CaptureScreen: View {
                 statusBar
                 directorAdvice
                 Spacer()
-                zoomControl
+                bottomControls
             }
             .padding()
         }
@@ -137,6 +137,72 @@ struct CaptureScreen: View {
             .accessibilityLabel("Camera zoom")
             .accessibilityValue("\(zoomState.factor, specifier: "%.1f") times")
             .accessibilityHint("Pinch the viewfinder to zoom, or tap to return to one times")
+        }
+    }
+
+    private var bottomControls: some View {
+        VStack(spacing: 12) {
+            zoomControl
+
+            if model.isPhonePhotoCaptureAvailable {
+                photoCaptureFeedback
+                shutterButton
+            }
+        }
+    }
+
+    private var shutterButton: some View {
+        Button {
+            model.capturePhoto()
+        } label: {
+            ZStack {
+                Circle()
+                    .stroke(.white, lineWidth: 4)
+                    .frame(width: 76, height: 76)
+
+                Circle()
+                    .fill(.white)
+                    .frame(width: 64, height: 64)
+                    .scaleEffect(model.photoCaptureStatus == .capturing ? 0.86 : 1)
+
+                if model.photoCaptureStatus == .capturing {
+                    ProgressView()
+                        .tint(.black)
+                }
+            }
+            .frame(width: 80, height: 80)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.canCapturePhoto)
+        .opacity(model.canCapturePhoto || model.photoCaptureStatus == .capturing ? 1 : 0.5)
+        .animation(.easeOut(duration: 0.12), value: model.photoCaptureStatus)
+        .sensoryFeedback(.impact(weight: .medium), trigger: model.captureFeedbackCount)
+        .accessibilityLabel("Take photo")
+        .accessibilityHint("Captures with the iPhone camera and saves to Photos")
+    }
+
+    @ViewBuilder
+    private var photoCaptureFeedback: some View {
+        switch model.photoCaptureStatus {
+        case .idle, .capturing:
+            EmptyView()
+        case .saved:
+            Label("Saved to Photos", systemImage: "checkmark.circle.fill")
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .accessibilityAddTraits(.isStaticText)
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.footnote.weight(.medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
+                .accessibilityAddTraits(.isStaticText)
         }
     }
 

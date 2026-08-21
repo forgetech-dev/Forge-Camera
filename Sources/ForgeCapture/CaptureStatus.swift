@@ -11,6 +11,10 @@ public enum CaptureError: Error, Sendable, Equatable {
     case deviceInputUnavailable
     case videoOutputUnavailable
     case videoConnectionUnavailable
+    case photoCaptureUnavailable
+    case photoCaptureInProgress
+    case photoDataUnavailable
+    case photoProcessingFailed
     case sessionFailedToStart
     case runtimeFailure
 
@@ -34,6 +38,13 @@ public enum CaptureError: Error, Sendable, Equatable {
              .sessionFailedToStart,
              .runtimeFailure:
             "Stop other camera apps and try again."
+        case .photoCaptureUnavailable:
+            "Wait for the phone camera to become ready, then try again."
+        case .photoCaptureInProgress:
+            "Wait for the current photo to finish, then try again."
+        case .photoDataUnavailable,
+             .photoProcessingFailed:
+            "Keep the app open and try taking the photo again."
         }
     }
 }

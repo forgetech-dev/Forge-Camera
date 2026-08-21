@@ -13,14 +13,14 @@ link to it instead of copying it.
 
 ## Current state
 
-**Last updated:** 2026-08-21 · **Phase:** 1 complete, 2 vertical slice closed; zoom visible on iPhone, Director-config and legacy-cue fixes awaiting rerun
+**Last updated:** 2026-08-21 · **Phase:** 1 complete, 2 vertical slice closed; AI frame tracking accepted and phone still capture awaiting device validation
 
 | | |
 |---|---|
-| Tests | 194, all passing |
+| Tests | 200, all passing |
 | `make check` | Passing (format, lint, build, test, skills, boundaries) |
 | CI | The Swift 6.1 and boundaries fixes are pushed on `origin/main`; the remote run after the latest commit has not been checked in this session. |
-| Device status | The user confirmed the clean live-camera baseline, `Mac connected`, manual lightbulb planning, `Plan received`, the AI-selected target frame/outside scrim, and two-line advice presentation on an iPhone in portrait. A photographed beverage can was selected and framed coherently; the user accepted the result. The latest iPhone screenshot confirms the 1× zoom badge renders, but exposed a regenerated-project Director host loss and the still-visible legacy `Turn left` cue. Both are fixed in the worktree and await a new device run; actual pinch behavior is still unconfirmed. Landscape, quantitative N-01/N-02 measurements, and broad device coverage remain undone. |
+| Device status | The user confirmed the clean live-camera baseline, `Mac connected`, manual lightbulb planning, `Plan received`, the AI-selected target frame/outside scrim, two-line advice, restored Director HUD, removed legacy `Turn left`, camera zoom, and the first image-space target-frame tracking behavior on an iPhone in portrait. The new phone-only shutter and Photos save path compile but have not yet been exercised on the phone. Landscape, quantitative N-01/N-02 measurements, and broad device coverage remain undone. |
 
 ### Built and verified
 
@@ -46,9 +46,12 @@ advancement and newest-one buffering.
 independent, read-only copy and package-scoped intrinsics; future `ForgeVision` can consume it
 without depending on `ForgeCapture`.
 
-`ForgeVision` — on-device perception. `VisionSceneAnalyzer` batches human-rectangle and
-body-pose requests through one `ImageRequestHandler`, converts all Vision geometry into Forge
-normalized space at the boundary, drops low-confidence joints, and matches each pose to a person by
+`ForgeVision` — on-device perception. Actor-isolated `VisionSceneAnalyzer` batches human-rectangle,
+body-pose, and an optional stateful arbitrary-region tracking request through one
+`ImageRequestHandler`. An AI plan's `selection.sourceRegion` seeds `TrackObjectRequest`; every
+result is converted back into Forge normalized space and tagged with a local generation so a late
+old result cannot replace a newer plan. Tracking is image-space only and makes no world-space or
+metric claim. Human analysis still drops low-confidence joints and matches each pose to a person by
 joint centroid. `SubjectTracker` assigns identities by nearest-centre matching with a gate, but its
 declared missing-frame tolerance does not retain bounds in the returned scene; a one-frame miss still
 removes the visible subject and can break identity recovery. Treat tracking stability as unfinished.
@@ -56,6 +59,7 @@ removes the visible subject and can break identity recovery. Treat tracking stab
 `ForgeDirectorCodex` — development-Mac image-to-plan proof. `CodexDirectorSpike` accepts one JPEG or
 PNG, re-encodes decoded pixels to a metadata-free JPEG with a 1024-pixel maximum edge, stages only
 generic temporary filenames, and invokes the installed CLI with `--ephemeral`, `--ignore-user-config`,
+the explicitly pinned `gpt-5.6-luna` model, low response verbosity, and Fast service tier,
 read-only sandboxing, and a strict output schema. It decodes into `CompositionPlan`, verifies the
 request identity, and applies `PlanValidator`. The CLI owns existing authentication; the module does
 not read or copy credentials. The command is explicit: `make codex-spike IMAGE=/path/to/image.jpg`.
@@ -92,7 +96,10 @@ asymmetric tests cover crop offsets, portrait rotation, mirroring, and invalid s
 On iOS the source also applies clamped `videoZoomFactor` changes on `sessionQueue` and publishes the
 actual applied `CameraZoomState`; interactive zoom is bounded by device capabilities and a deliberate
 8× quality ceiling. The AVFoundation calls are iOS-only because these zoom APIs are unavailable on
-macOS, while the pure bounds policy remains hardware-free and tested.
+macOS, while the pure bounds policy remains hardware-free and tested. The same session now installs
+an optional independent `AVCapturePhotoOutput`, synchronizes its rotation with the video output, and
+returns one full-quality encoded still without pausing preview analysis. If that optional output is
+unsupported, the session remains preview-only and reports no still-capture capability.
 
 `App` — `CaptureScreen` is now the entry point, backed by `CaptureModel`, the composition root that
 wires `AVFoundationFrameSource` + `VisionSceneAnalyzer` + `HeuristicDirector` into `CapturePipeline`.
@@ -105,7 +112,12 @@ There is no Compose button, synthetic gray composition screen,
 stage picker, or slider harness. Raw current/target subject rectangles were removed from
 `OverlayModel` and `GuidanceEngine`, not merely hidden. The real preview now renders the retained AI
 plan's single validated `targetFrame` with a restrained outside scrim through the tested aspect-fill
-mapping. Before a valid plan exists there is no target frame. The App also shows at most two
+mapping. When the plan contains both `selection.sourceRegion` and `framing.targetFrame`, the App
+preserves their original centre/scale relationship and projects the target frame from the locally
+tracked selection each frame. Translation follows camera/subject movement; uniform apparent scale
+makes the frame grow with zoom without distorting its aspect ratio. A lost/low-confidence track
+hides the frame rather than leaving a misleading screen-fixed box. Before a valid plan exists there
+is no target frame. The App also shows at most two
 single-line `displayAdvice` suggestions in compact material at the top edge. Advice remains
 display-only; no logic branches on its wording. `visualAnchor` remains the next part of the
 Director-to-presentation contract after local tracking exists.
@@ -124,11 +136,19 @@ uploads it to `/v1/plan`, validates the response, and retains the resulting `Com
 While one request is in flight the action is disabled and displays a progress indicator; after
 success or failure it can be tapped again for a fresh frame. The compact badge reports
 `AI analyzing`, then `Plan received` or `Plan failed`. A successful plan drives the visible frame and
-advice immediately; a failed retry leaves the prior valid plan latched. The realtime analysis
+advice immediately; a failed retry leaves the prior valid plan latched. Because the Mac response is
+slow, the first tracking seed is applied to the current frame when the plan arrives; keeping the
+scene approximately stable during analysis remains a first-slice device requirement. The realtime analysis
 pipeline still uses `HeuristicDirector` internally, but its legacy prose cues are not displayed.
 The live viewfinder now accepts a two-finger pinch and shows the applied factor in a compact
 bottom-edge badge using monospaced digits. Tapping the badge requests 1×. The badge observes the
 camera source's applied-state stream rather than displaying an unconfirmed gesture value.
+Once the native phone session reports still-capture capability, a standard bottom shutter appears.
+It is hidden when that capability is absent, which is the presentation rule for a future external
+camera monitor feed. A tap captures through the phone's photo output, requests Photos add-only
+permission, saves the result to the system library, and presents immediate haptic/progress plus
+saved/error feedback. Capture and library storage are separate boundaries; `ForgeCapture` never
+imports Photos.
 
 Verified in the simulator, end to end: the permission prompt appears with the real purpose string
 and the HUD shows `awaitingPermission`; granting it then advances to session configuration, fails
@@ -148,12 +168,12 @@ F-01/F-02 are qualitatively proven on one device; F-03 is not satisfied because 
 not working as intended.
 
 Most of Phase 3 onward remains unbuilt: AI-plan-driven typed guidance, repeated/event-driven
-planning, capture and review loop, and all external-camera work. The development LAN health and
+planning, review/crop loop, and all external-camera work. The development LAN health and
 user-triggered planning-image paths are confirmed on one physical iPhone. Interactive 1×–8× zoom is
-implemented but has not yet been exercised on that device; true 0.5× requires selecting a
+accepted on that device; true 0.5× requires selecting a
 multi-camera/ultra-wide device and is not part of this slice. Horizon, lighting, and device motion
 are still `nil` in
-`SceneState` — `VisionSceneAnalyzer` reports subjects only, so levelling and exposure guidance have
+`SceneState` — `VisionSceneAnalyzer` reports subjects and optional selection tracking only, so levelling and exposure guidance have
 no input yet. CoreMotion gravity is the cheap next win there.
 
 The D-12 Mac-only proof is implemented and passed two real requests. Both cat images produced animal
@@ -165,19 +185,23 @@ The newly confirmed Phase 3 product interaction is still mostly unbuilt. Its cor
 presentation state, development Codex provider, LAN-capable HTTP server, one-shot live-camera
 planning request, AI target frame, and concise advice exist, but the discarded synthetic interaction
 preview is gone. A reusable
-app-side network `DirectorProvider`, discovery, user override, local arbitrary-region
-tracking, automatic anchor-to-frame transition, AI-driven live-preview rendering, photo capture,
-and actual still-image cropping do not.
+app-side network `DirectorProvider`, discovery, user override, automatic visual-anchor acquisition
+and anchor-to-frame transition, tap-to-replace selection, external-camera capture, review,
+and actual still-image cropping do not. Native iPhone still capture now exists as an unvalidated
+device slice.
 
 ---
 
 ## In flight
 
-**Uncommitted work contains the bounded camera-zoom slice on top of `1c081c7`, plus the physical-run
-follow-up:** queue-confined iOS `videoZoomFactor` control, applied zoom-state publication, pinch and
-1× HUD interaction, durable gitignored local Director configuration, always-visible Director state,
-removal of legacy heuristic text from the production HUD, docs, tests, and this handoff. No lens
-picker, 0.5× ultra-wide selection, still capture, crop, or AI planning behavior changed.
+**Uncommitted work on top of `6fcd8f2` contains the first AI-frame tracking and phone-still slices:** the plan's
+`sourceRegion` seeds local stateful Vision tracking, tracking observations flow through `SceneState`,
+and the App projects the plan's target frame from the selection's current image-space centre and
+uniform apparent scale. Coordinate round trips and the projection math are tested, and the user
+reported the first device result as acceptable. The phone session also exposes optional full-quality
+still capture; the App conditionally shows a bottom shutter and saves to Photos. No AR/world anchor,
+metric camera pose, automatic subject replacement, tap-to-replace, external-camera shutter, review,
+or crop was added.
 
 **The checked-out `Forge.xcodeproj` is regenerated with the current Mac `.local` host and the new
 `ForgeBridge` App dependency.** Its PBX file contains no references to `GuidancePreviewScreen` or
@@ -216,17 +240,23 @@ The prior Swift portability/CI fixes are committed and pushed as `cd9db89` and `
    a 1024-pixel edge bound and no source metadata, validates the returned plan, and retains it
    without changing the overlay. The action coalesces while in flight and supports later retries.
    On-device success is `AI analyzing` → `Plan received`; failure degrades to `Plan failed`.
-11. Reopen the regenerated project and physically verify that the right HUD reaches `Mac connected`,
-    the lightbulb can reach `Plan received`, and no `Turn left` heuristic cue appears. The 1× badge is
-    confirmed visible; still test repeated pinch gestures, preview continuity, and tap-to-1×. Treat
-    0.5× ultra-wide support as a later capability-driven lens-selection slice.
-12. Initialize local arbitrary-region tracking from the AI selection and support tap-to-replace.
+11. ~~Reopen the regenerated project and physically verify that the right HUD reaches `Mac connected`,
+    the lightbulb can reach `Plan received`, and no `Turn left` heuristic cue appears.~~ **Done;** the
+    user also accepted zoom as normal. Treat 0.5× ultra-wide support as a later capability-driven
+    lens-selection slice.
+12. ~~Implement local arbitrary-region tracking from the AI selection and drive the target frame
+    with its translation/scale.~~ **Implemented and qualitatively accepted on the user's phone.**
+    Tracking-loss recovery and broader motion/scene coverage still need structured testing;
+    tap-to-replace and visual-anchor acquisition remain separate slices.
 13. ~~Replace the deterministic frame source with the retained AI plan and show its short advice.~~
    **Implemented and accepted on a physical iPhone in portrait.** Before the first valid plan the overlay
    shows no target frame. Success shows the validated frame and at most two single-line suggestions;
    a failed retry keeps the previous plan. Automatic visual-anchor-to-target-frame transition
    follows only after local tracking exists.
-14. Add still capture, then implement the selected crop against captured pixels with review/undo.
+14. **In progress:** native phone still capture and Photos saving are implemented with a
+    capability-gated bottom shutter. Physically verify the permission prompt, saved orientation,
+    resolution, preview continuity, and repeated captures. Then implement the selected crop against
+    captured pixels with review/undo. External monitor feeds must not show this phone shutter.
 15. Record and replay real sessions, then measure N-01/N-02 and tune stability. CoreMotion horizon and
    frame-statistics lighting follow once the new core composition loop is trustworthy.
 
@@ -295,6 +325,9 @@ survives, not just the conclusion.
 | D-14 | Opening the capture screen checks Mac health but never requests an AI plan; the user explicitly taps a compact lightbulb action for every planning image | A 10–20 second external request is planning-cadence work, not frame-cadence analysis. Explicit intent avoids surprising external calls on every launch, while one-frame delivery prevents realtime load and preserves preview responsiveness. |
 | D-15 | First camera zoom is a two-finger pinch on the existing back wide-angle device, with the applied factor shown and a tap-to-1× reset; expose at most 8× | This proves responsive zoom without adding a lens-selection abstraction. `0.5×` is a real ultra-wide/multi-camera capability, not a valid assumption about `videoZoomFactor`, so it remains a separate capability-driven slice. |
 | D-16 | Per-developer Director host configuration lives in gitignored `Config/Local.xcconfig`, included optionally by tracked `Config/Development.xcconfig` | Generated projects must preserve the endpoint without committing personal hostnames. Finder-launched Xcode does not reliably inherit shell profile variables, and project regeneration must not silently disable the feature. |
+| D-17 | The first moving target frame is an image-space projection from the AI plan's `sourceRegion` to a local Vision arbitrary-region track; it preserves frame aspect ratio, follows tracked centre and uniform apparent scale, and disappears on an untrustworthy result | This makes camera pan and digital zoom actionable without fabricating a world anchor or distance. The AI remains manual/planning-cadence; per-frame work stays local. Clamping or retaining a fixed box at tracking loss would misrepresent the intended composition. |
+| D-18 | Show the bottom shutter only when the displayed source declares local still-capture capability; the native phone source saves to Photos, while an external-camera monitor feed does not show this phone shutter | A monitor is not automatically a controllable camera. Capability-gating prevents a local control from implying that an external feed can capture, and lets preview-only operation degrade cleanly. |
+| D-19 | The development Mac Director pins `codex exec` to `gpt-5.6-luna` with `model_verbosity="low"`, `features.fast_mode=true`, and `service_tier="fast"`; reasoning effort remains at the CLI/model default until explicitly chosen | `--ignore-user-config` makes provider behavior reproducible and prevents a developer's global settings from silently changing latency or output. Luna plus Fast mode is the user-selected latency experiment; low verbosity is sufficient because the final output is schema-constrained JSON. Fast mode's higher credit consumption is accepted for this development test. |
 | — | Canonical skills in `.agents/skills/`, **no `.codex/skills/`** | Codex scans `.agents/skills` and `.codex/skills` as separate roots and does **not** deduplicate — a skill reachable from both is listed twice. Verified against Codex 0.144.6. |
 | — | gitleaks **CLI** in CI, not `gitleaks-action` | The action needs a licence key for org-owned repos (free for one repo, paid beyond). The CLI is MIT with no key. Version and SHA-256 both pinned. |
 | — | `GuidanceCueFormatter` lives in `ForgeCore`, not the app | Pure, no UI dependency, and it is the single point where "never fabricate precision" becomes visible text. In the package, `swift test` covers it everywhere. |
@@ -447,6 +480,45 @@ the generated project.
 
 Newest first. One entry per working session. Keep entries short — what changed and what
 the next agent needs to know, not a narrative.
+
+### 2026-08-21 · Codex (GPT-5) — pin Director to Luna Fast mode
+
+- Added explicit `codex exec` overrides for `gpt-5.6-luna` and
+  `model_verbosity="low"`, then enabled `features.fast_mode=true` and `service_tier="fast"` at the
+  user's request. These remain effective with `--ignore-user-config`; authentication is unchanged
+  and reasoning effort is intentionally left at the model/CLI default.
+- Extended the invocation contract test so later refactors cannot silently fall back to a personal
+  global model setting. Verification is recorded with the still-capture session below.
+
+### 2026-08-21 · Codex (GPT-5) — capability-gated iPhone shutter
+
+- Added an optional `AVCapturePhotoOutput` beside the existing video-data output. It captures one
+  full-quality still asynchronously, shares the rotation coordinator, and degrades to preview-only
+  if the device cannot install the photo output.
+- Added an App-owned Photos add-only writer and capture state. The bottom standard shutter appears
+  only after the native phone source reports still-capture capability; it remains absent for a feed
+  without that capability, including the future external-camera monitor path.
+- Added haptic/progress, saved, permission, and failure feedback without stopping the viewfinder.
+  The existing photo-library purpose string was already present.
+- `make check` passes with 200 tests; strict iOS device type-check and the full simulator App build
+  pass. Next is physical-device verification of permission, save, orientation, resolution, repeated
+  capture, and preview continuity. No review/crop screen or external-camera shutter was added.
+
+### 2026-08-21 · Codex (GPT-5) — AI target-frame image-space tracking
+
+- Converted `VisionSceneAnalyzer` to an actor so one shared stateful `TrackObjectRequest` can be
+  seeded from `CompositionPlan.selection.sourceRegion` and advanced sequentially with camera frames.
+  Human, pose, and selection requests remain batched through one handler; generation IDs reject
+  reentrant stale results.
+- Added an explicit optional selection-tracking observation to `SceneState`. `CaptureModel` projects
+  the original `targetFrame` from the tracked region's translation and uniform scale, preserving the
+  photograph frame's aspect ratio and hiding it when tracking is not trustworthy.
+- Added asymmetric coordinate round-trip tests plus translation, zoom, deformation, invalid-input,
+  and out-of-preview projection tests. `swift test` passes 200 tests; format/lint, strict iOS
+  type-check, and full iOS Simulator App build pass.
+- The user subsequently reported the first phone result as acceptable. Structured slow-pan,
+  loss/recovery, and broader-scene coverage remain. Do not describe this as a world-space anchor;
+  it is local 2D image tracking.
 
 ### 2026-08-21 · Codex (GPT-5) — restore Director HUD and remove legacy cue
 

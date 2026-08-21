@@ -35,6 +35,10 @@ struct AVFoundationFrameSourceTests {
         var statuses = source.statuses.makeAsyncIterator()
 
         #expect(await statuses.next() == .idle)
+        #expect(await source.isPhotoCaptureAvailable == false)
+        await #expect(throws: CaptureError.photoCaptureUnavailable) {
+            try await source.capturePhoto()
+        }
 
         await source.stop()
         #expect(await statuses.next() == .idle)
@@ -68,6 +72,10 @@ struct AVFoundationFrameSourceTests {
             .deviceInputUnavailable,
             .videoOutputUnavailable,
             .videoConnectionUnavailable,
+            .photoCaptureUnavailable,
+            .photoCaptureInProgress,
+            .photoDataUnavailable,
+            .photoProcessingFailed,
             .sessionFailedToStart,
             .runtimeFailure,
         ]

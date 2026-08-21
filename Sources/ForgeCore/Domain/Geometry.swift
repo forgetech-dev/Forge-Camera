@@ -129,6 +129,62 @@ public struct NormalizedRect: Sendable, Equatable, Codable {
         let overlapHeight = max(0, min(maxY, other.maxY) - max(minY, other.minY))
         return (overlapWidth * overlapHeight) / area
     }
+
+    /// Moves and uniformly scales this rect with an image-space tracking region.
+    ///
+    /// The receiver is the AI director's original target frame. `referenceRegion`
+    /// is the selected subject region from that same planning image, and
+    /// `trackedRegion` is where local perception sees that subject now. The result
+    /// preserves the target frame's aspect ratio while following the subject's
+    /// apparent translation and scale change.
+    ///
+    /// The result is intentionally not clamped to the unit square. A target frame
+    /// extending beyond the preview honestly tells the UI that the photographer
+    /// still needs to move the camera; clamping would distort the composition.
+    public func projected(
+        from referenceRegion: NormalizedRect,
+        to trackedRegion: NormalizedRect
+    ) -> NormalizedRect? {
+        let values = [
+            x, y, width, height,
+            referenceRegion.x, referenceRegion.y,
+            referenceRegion.width, referenceRegion.height,
+            trackedRegion.x, trackedRegion.y,
+            trackedRegion.width, trackedRegion.height,
+        ]
+        guard values.allSatisfy(\.isUsableNumber),
+              width > 0,
+              height > 0,
+              referenceRegion.width > 0,
+              referenceRegion.height > 0,
+              trackedRegion.width > 0,
+              trackedRegion.height > 0
+        else {
+            return nil
+        }
+
+        // Width and height can jitter independently as the tracked object's outline
+        // changes. Their geometric mean retains the real common zoom component while
+        // keeping the photographic frame's aspect ratio stable.
+        let widthScale = trackedRegion.width / referenceRegion.width
+        let heightScale = trackedRegion.height / referenceRegion.height
+        let scale = sqrt(widthScale * heightScale)
+        guard scale.isUsableNumber, scale > 0 else { return nil }
+
+        let offsetX = (midX - referenceRegion.midX) * scale
+        let offsetY = (midY - referenceRegion.midY) * scale
+        let projectedWidth = width * scale
+        let projectedHeight = height * scale
+        let projectedMidX = trackedRegion.midX + offsetX
+        let projectedMidY = trackedRegion.midY + offsetY
+
+        return NormalizedRect(
+            x: projectedMidX - projectedWidth / 2,
+            y: projectedMidY - projectedHeight / 2,
+            width: projectedWidth,
+            height: projectedHeight
+        )
+    }
 }
 
 // MARK: - Frame geometry

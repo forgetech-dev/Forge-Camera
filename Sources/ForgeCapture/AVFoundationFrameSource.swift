@@ -40,6 +40,7 @@ public final class AVFoundationFrameSource: FrameSource, @unchecked Sendable {
 
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
+    let photoOutput = AVCapturePhotoOutput()
     let sessionQueue = DispatchQueue(label: "dev.forge.photographer.capture.session")
     let videoQueue = DispatchQueue(label: "dev.forge.photographer.capture.video")
     let frameDelivery: VideoFrameDelivery
@@ -60,6 +61,7 @@ public final class AVFoundationFrameSource: FrameSource, @unchecked Sendable {
     var attemptedRuntimeRestart = false
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
+    var photoCaptureProcessor: PhotoCaptureProcessor?
     var notificationObservers: [NSObjectProtocol] = []
     /// Active input device. Accessed only on `sessionQueue` after initialization.
     var activeVideoDevice: AVCaptureDevice?
@@ -390,6 +392,8 @@ private extension AVFoundationFrameSource {
         session.addInput(input)
 
         try configureVideoOutput(for: device)
+        configurePhotoOutput()
+        installRotationCoordinator(device: device)
 
         activeVideoDevice = device
         #if os(iOS)
@@ -431,7 +435,6 @@ private extension AVFoundationFrameSource {
                 connection.isCameraIntrinsicMatrixDeliveryEnabled = true
             }
         #endif
-        installRotationCoordinator(device: device)
     }
 
     private func defaultVideoDevice() -> AVCaptureDevice? {
@@ -465,6 +468,11 @@ private extension AVFoundationFrameSource {
 
     /// Looks up the connection on its owning queue instead of sending it across queues.
     private func applyRotation(_ angle: CGFloat) {
+        if let photoConnection = photoOutput.connection(with: .video),
+           photoConnection.isVideoRotationAngleSupported(angle) {
+            photoConnection.videoRotationAngle = angle
+        }
+
         guard let connection = videoOutput.connection(with: .video),
               connection.isVideoRotationAngleSupported(angle)
         else {

@@ -84,6 +84,70 @@ struct GeometryTests {
         ) == 0)
     }
 
+    @Test("A target frame follows selection translation")
+    func targetFrameFollowsTranslation() throws {
+        let target = NormalizedRect(x: 0.1, y: 0.15, width: 0.6, height: 0.7)
+        let initial = NormalizedRect(x: 0.2, y: 0.3, width: 0.2, height: 0.2)
+        let moved = NormalizedRect(x: 0.35, y: 0.2, width: 0.2, height: 0.2)
+
+        let projected = try #require(target.projected(from: initial, to: moved))
+
+        #expect(projected.x.isApproximately(target.x + 0.15))
+        #expect(projected.y.isApproximately(target.y - 0.1))
+        #expect(projected.width.isApproximately(target.width))
+        #expect(projected.height.isApproximately(target.height))
+    }
+
+    @Test("A target frame grows uniformly with selection zoom")
+    func targetFrameFollowsZoom() throws {
+        let target = NormalizedRect(x: 0.2, y: 0.2, width: 0.4, height: 0.5)
+        let initial = NormalizedRect(x: 0.4, y: 0.4, width: 0.1, height: 0.2)
+        let zoomed = NormalizedRect(x: 0.35, y: 0.3, width: 0.2, height: 0.4)
+
+        let projected = try #require(target.projected(from: initial, to: zoomed))
+
+        // The target centre's offset from the subject also scales. Here the target
+        // starts 0.05 left/up of the selected subject, so a 2x zoom doubles that
+        // offset while the selected subject centre remains fixed.
+        #expect(projected.center.x.isApproximately(0.35))
+        #expect(projected.center.y.isApproximately(0.4))
+        #expect(projected.width.isApproximately(target.width * 2))
+        #expect(projected.height.isApproximately(target.height * 2))
+        #expect((projected.width / projected.height).isApproximately(target.width / target.height))
+    }
+
+    @Test("Tracking outline deformation does not distort the target aspect ratio")
+    func targetFrameUsesUniformScale() throws {
+        let target = NormalizedRect(x: 0.2, y: 0.25, width: 0.4, height: 0.5)
+        let initial = NormalizedRect(x: 0.3, y: 0.3, width: 0.2, height: 0.2)
+        let deformed = NormalizedRect(x: 0.2, y: 0.35, width: 0.4, height: 0.1)
+
+        let projected = try #require(target.projected(from: initial, to: deformed))
+
+        #expect(projected.width.isApproximately(target.width))
+        #expect(projected.height.isApproximately(target.height))
+    }
+
+    @Test("Invalid tracking geometry is rejected")
+    func invalidTrackingGeometryIsRejected() {
+        let target = NormalizedRect(x: 0.2, y: 0.2, width: 0.5, height: 0.5)
+        let empty = NormalizedRect(x: 0.4, y: 0.4, width: 0, height: 0.2)
+        let tracked = NormalizedRect(x: 0.3, y: 0.3, width: 0.2, height: 0.2)
+
+        #expect(target.projected(from: empty, to: tracked) == nil)
+    }
+
+    @Test("A projected target may remain outside the preview")
+    func projectedTargetIsNotClamped() throws {
+        let target = NormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+        let initial = NormalizedRect(x: 0.4, y: 0.4, width: 0.2, height: 0.2)
+        let moved = NormalizedRect(x: 0.8, y: 0.4, width: 0.2, height: 0.2)
+
+        let projected = try #require(target.projected(from: initial, to: moved))
+
+        #expect(projected.maxX > 1)
+    }
+
     @Test("Frame aspect ratio follows the orientation-corrected pixel size")
     func aspectRatio() {
         let landscape = FrameGeometry(

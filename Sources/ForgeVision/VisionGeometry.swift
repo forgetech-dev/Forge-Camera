@@ -36,6 +36,16 @@ extension ForgeCore.NormalizedRect {
             height: height
         )
     }
+
+    /// This Forge rect in Vision's bottom-left-origin normalized space.
+    var visionRect: Vision.NormalizedRect {
+        Vision.NormalizedRect(
+            x: CGFloat(x),
+            y: CGFloat(1 - maxY),
+            width: CGFloat(width),
+            height: CGFloat(height)
+        )
+    }
 }
 
 extension Vision.NormalizedRect {
