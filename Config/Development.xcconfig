@@ -1,0 +1,4 @@
+// Shared defaults for the generated iOS project. Per-developer values belong in
+// the optional, gitignored Local.xcconfig beside this file.
+FORGE_DIRECTOR_HOST =
+#include? "Local.xcconfig"

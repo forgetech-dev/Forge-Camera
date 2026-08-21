@@ -76,14 +76,18 @@ curl http://127.0.0.1:8765/health
 curl --form image=@/path/to/image.jpg http://127.0.0.1:8765/v1/plan
 ```
 
-For the current trusted-network functional prototype, configure the generated iOS project with this
-Mac's local hostname and start the explicitly unauthenticated LAN mode:
+For the current trusted-network functional prototype, write this Mac's local hostname into the
+gitignored developer configuration, regenerate the iOS project, and start the explicitly
+unauthenticated LAN mode:
 
 ```sh
-export FORGE_DIRECTOR_HOST="$(scutil --get LocalHostName).local"
+printf 'FORGE_DIRECTOR_HOST = %s.local\n' "$(scutil --get LocalHostName)" > Config/Local.xcconfig
 make project
 make server-lan
 ```
+
+`Config/Development.xcconfig` includes this file when present. Consequently later `make project`
+and `make app` runs preserve the address without committing a personal hostname to the repository.
 
 Install or run the regenerated project on the iPhone. Its top HUD reports `Checking Mac`, then
 `Mac connected`; opening the App does not invoke Codex. Tap the small lightbulb at the top right to

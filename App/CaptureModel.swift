@@ -35,6 +35,7 @@ final class CaptureModel {
     private(set) var directorStatus = DirectorDevelopmentStatus.disabled
     private(set) var directorPlan: CompositionPlan?
     private(set) var frameGeometry: FrameGeometry?
+    private(set) var zoomState: CameraZoomState?
     /// Frames analyzed and frames rejected as stale, for the diagnostics readout.
     private(set) var framesAnalyzed = 0
 
@@ -45,6 +46,7 @@ final class CaptureModel {
     private var pipelineTask: Task<Void, Never>?
     private var updatesTask: Task<Void, Never>?
     private var statusTask: Task<Void, Never>?
+    private var zoomStateTask: Task<Void, Never>?
     private var directorHealthTask: Task<Void, Never>?
     private var directorPlanTask: Task<Void, Never>?
 
@@ -66,6 +68,13 @@ final class CaptureModel {
             guard let self else { return }
             for await status in source.statuses {
                 self.status = status
+            }
+        }
+
+        zoomStateTask = Task { [weak self] in
+            guard let self else { return }
+            for await zoomState in source.zoomStates {
+                self.zoomState = zoomState
             }
         }
 
@@ -92,11 +101,13 @@ final class CaptureModel {
         pipelineTask?.cancel()
         updatesTask?.cancel()
         statusTask?.cancel()
+        zoomStateTask?.cancel()
         directorHealthTask?.cancel()
         directorPlanTask?.cancel()
         pipelineTask = nil
         updatesTask = nil
         statusTask = nil
+        zoomStateTask = nil
         directorHealthTask = nil
         directorPlanTask = nil
         Task { await pipeline.stop() }
@@ -104,6 +115,15 @@ final class CaptureModel {
 
     func replan() {
         Task { await pipeline.requestReplan() }
+    }
+
+    func setZoomFactor(_ requestedFactor: Double) {
+        guard let zoomState else { return }
+        source.setZoomFactor(zoomState.clampedFactor(requestedFactor))
+    }
+
+    func resetZoom() {
+        setZoomFactor(1)
     }
 
     var canRequestDirectorPlan: Bool {

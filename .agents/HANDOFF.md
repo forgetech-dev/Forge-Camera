@@ -13,14 +13,14 @@ link to it instead of copying it.
 
 ## Current state
 
-**Last updated:** 2026-08-20 · **Phase:** 1 complete, 2 vertical slice closed; AI target-frame presentation accepted on iPhone
+**Last updated:** 2026-08-21 · **Phase:** 1 complete, 2 vertical slice closed; zoom visible on iPhone, Director-config and legacy-cue fixes awaiting rerun
 
 | | |
 |---|---|
-| Tests | 192, all passing |
+| Tests | 194, all passing |
 | `make check` | Passing (format, lint, build, test, skills, boundaries) |
 | CI | The Swift 6.1 and boundaries fixes are pushed on `origin/main`; the remote run after the latest commit has not been checked in this session. |
-| Device status | The user confirmed the clean live-camera baseline, `Mac connected`, manual lightbulb planning, `Plan received`, the AI-selected target frame/outside scrim, and two-line advice presentation on an iPhone in portrait. A photographed beverage can was selected and framed coherently; the user accepted the result. The rejected two-box UI, slider harness, and synthetic Compose screen are absent. Landscape, quantitative N-01/N-02 measurements, and broad device coverage remain undone. |
+| Device status | The user confirmed the clean live-camera baseline, `Mac connected`, manual lightbulb planning, `Plan received`, the AI-selected target frame/outside scrim, and two-line advice presentation on an iPhone in portrait. A photographed beverage can was selected and framed coherently; the user accepted the result. The latest iPhone screenshot confirms the 1× zoom badge renders, but exposed a regenerated-project Director host loss and the still-visible legacy `Turn left` cue. Both are fixed in the worktree and await a new device run; actual pinch behavior is still unconfirmed. Landscape, quantitative N-01/N-02 measurements, and broad device coverage remain undone. |
 
 ### Built and verified
 
@@ -89,13 +89,19 @@ concurrent starts, task cancellation, stopping mid-prompt, backgrounding mid-pro
 hardware-free tests. `PreviewGeometry` maps Forge normalized image geometry into an aspect-fill
 viewport using the orientation-corrected frame dimensions and an explicit preview-mirroring flag;
 asymmetric tests cover crop offsets, portrait rotation, mirroring, and invalid sizes.
+On iOS the source also applies clamped `videoZoomFactor` changes on `sessionQueue` and publishes the
+actual applied `CameraZoomState`; interactive zoom is bounded by device capabilities and a deliberate
+8× quality ceiling. The AVFoundation calls are iOS-only because these zoom APIs are unavailable on
+macOS, while the pure bounds policy remains hardware-free and tested.
 
 `App` — `CaptureScreen` is now the entry point, backed by `CaptureModel`, the composition root that
 wires `AVFoundationFrameSource` + `VisionSceneAnalyzer` + `HeuristicDirector` into `CapturePipeline`.
 `CameraPreviewView` hosts an `AVCaptureVideoPreviewLayer` fed by the session **directly**, never by
 the frame stream, so a slow analysis pass cannot stall the viewfinder. The app is deliberately back
-to a clean live-camera baseline: camera preview, compact status, typed cues, and future-safe
-horizon/avoid-region overlay only. There is no Compose button, synthetic gray composition screen,
+to a clean live-camera baseline: camera preview, compact status, and future-safe horizon/avoid-region
+overlay only. The old local-heuristic text cues are no longer rendered in the production HUD; the
+pipeline remains available for analysis/frame geometry while AI advice is the visible direction.
+There is no Compose button, synthetic gray composition screen,
 stage picker, or slider harness. Raw current/target subject rectangles were removed from
 `OverlayModel` and `GuidanceEngine`, not merely hidden. The real preview now renders the retained AI
 plan's single validated `targetFrame` with a restrained outside scrim through the tested aspect-fill
@@ -107,16 +113,22 @@ The HUD does not present `GuidanceState.Readiness.ready` as a user-facing “Rea
 valid composition plan is active, that state only means there is no correction cue, not that the
 photograph is ready to take.
 
-When `FORGE_DIRECTOR_HOST` was present while generating the Xcode project, the App performs one
-startup `/health` check against `http://<host>:8765` and stops at `Mac connected`; opening the App
-never invokes Codex. A compact top-right lightbulb explicitly requests a plan. Each tap receives one
+`Config/Development.xcconfig` optionally includes the gitignored `Config/Local.xcconfig`, where each
+developer sets `FORGE_DIRECTOR_HOST`. The generated project therefore retains the Mac endpoint
+without committing a personal hostname or relying on Finder-launched Xcode to inherit shell state.
+The App performs one startup `/health` check against `http://<host>:8765` and stops at
+`Mac connected`; opening the App never invokes Codex. Director status and its lightbulb are always
+visible, so missing configuration appears as `Mac disabled` rather than silent absence. Each tap receives one
 newly delivered live frame, encodes it off the main actor as a maximum-1024-pixel metadata-free JPEG,
 uploads it to `/v1/plan`, validates the response, and retains the resulting `CompositionPlan`.
 While one request is in flight the action is disabled and displays a progress indicator; after
 success or failure it can be tapped again for a fresh frame. The compact badge reports
 `AI analyzing`, then `Plan received` or `Plan failed`. A successful plan drives the visible frame and
-advice immediately; a failed retry leaves the prior valid plan latched. The typed realtime guidance
-pipeline still uses `HeuristicDirector`.
+advice immediately; a failed retry leaves the prior valid plan latched. The realtime analysis
+pipeline still uses `HeuristicDirector` internally, but its legacy prose cues are not displayed.
+The live viewfinder now accepts a two-finger pinch and shows the applied factor in a compact
+bottom-edge badge using monospaced digits. Tapping the badge requests 1×. The badge observes the
+camera source's applied-state stream rather than displaying an unconfirmed gesture value.
 
 Verified in the simulator, end to end: the permission prompt appears with the real purpose string
 and the HUD shows `awaitingPermission`; granting it then advances to session configuration, fails
@@ -136,9 +148,11 @@ F-01/F-02 are qualitatively proven on one device; F-03 is not satisfied because 
 not working as intended.
 
 Most of Phase 3 onward remains unbuilt: AI-plan-driven typed guidance, repeated/event-driven
-planning, capture and review loop, and all external-camera work. The development LAN health path is
-confirmed on one physical iPhone; the user-triggered planning-image action is awaiting its next
-physical run. Horizon, lighting, and device motion are still `nil` in
+planning, capture and review loop, and all external-camera work. The development LAN health and
+user-triggered planning-image paths are confirmed on one physical iPhone. Interactive 1×–8× zoom is
+implemented but has not yet been exercised on that device; true 0.5× requires selecting a
+multi-camera/ultra-wide device and is not part of this slice. Horizon, lighting, and device motion
+are still `nil` in
 `SceneState` — `VisionSceneAnalyzer` reports subjects only, so levelling and exposure guidance have
 no input yet. CoreMotion gravity is the cheap next win there.
 
@@ -159,11 +173,11 @@ and actual still-image cropping do not.
 
 ## In flight
 
-**Uncommitted work contains two consecutive trusted-development slices:** explicit
-`forge-server --lan` plus iPhone health state, followed by user-triggered one-shot live-frame
-sanitization, multipart `/v1/plan` upload, validated-plan retention, App progress HUD/action,
-AI-driven frame/advice presentation, tests, docs, and this handoff. The preceding loopback server
-and composition/UI work is committed as `a4ce5a9`.
+**Uncommitted work contains the bounded camera-zoom slice on top of `1c081c7`, plus the physical-run
+follow-up:** queue-confined iOS `videoZoomFactor` control, applied zoom-state publication, pinch and
+1× HUD interaction, durable gitignored local Director configuration, always-visible Director state,
+removal of legacy heuristic text from the production HUD, docs, tests, and this handoff. No lens
+picker, 0.5× ultra-wide selection, still capture, crop, or AI planning behavior changed.
 
 **The checked-out `Forge.xcodeproj` is regenerated with the current Mac `.local` host and the new
 `ForgeBridge` App dependency.** Its PBX file contains no references to `GuidancePreviewScreen` or
@@ -202,14 +216,18 @@ The prior Swift portability/CI fixes are committed and pushed as `cd9db89` and `
    a 1024-pixel edge bound and no source metadata, validates the returned plan, and retains it
    without changing the overlay. The action coalesces while in flight and supports later retries.
    On-device success is `AI analyzing` → `Plan received`; failure degrades to `Plan failed`.
-11. Initialize local arbitrary-region tracking from the AI selection and support tap-to-replace.
-12. ~~Replace the deterministic frame source with the retained AI plan and show its short advice.~~
+11. Reopen the regenerated project and physically verify that the right HUD reaches `Mac connected`,
+    the lightbulb can reach `Plan received`, and no `Turn left` heuristic cue appears. The 1× badge is
+    confirmed visible; still test repeated pinch gestures, preview continuity, and tap-to-1×. Treat
+    0.5× ultra-wide support as a later capability-driven lens-selection slice.
+12. Initialize local arbitrary-region tracking from the AI selection and support tap-to-replace.
+13. ~~Replace the deterministic frame source with the retained AI plan and show its short advice.~~
    **Implemented and accepted on a physical iPhone in portrait.** Before the first valid plan the overlay
    shows no target frame. Success shows the validated frame and at most two single-line suggestions;
    a failed retry keeps the previous plan. Automatic visual-anchor-to-target-frame transition
    follows only after local tracking exists.
-13. Add still capture, then implement the selected crop against captured pixels with review/undo.
-14. Record and replay real sessions, then measure N-01/N-02 and tune stability. CoreMotion horizon and
+14. Add still capture, then implement the selected crop against captured pixels with review/undo.
+15. Record and replay real sessions, then measure N-01/N-02 and tune stability. CoreMotion horizon and
    frame-statistics lighting follow once the new core composition loop is trustworthy.
 
 The stale-buffered-frame limitation is **resolved and discharged**: `CapturePipeline.run()` applies
@@ -275,6 +293,8 @@ survives, not just the conclusion.
 | D-12 | The first real-AI validation runs on a trusted development Mac through its installed, already-authenticated Codex CLI; first prove a Mac-only image-to-`CompositionPlan` spike, then place it behind `forge-server` for iPhone access | This minimizes prototype work and keeps OpenAI credentials off the phone and out of the repository. BYOK, user accounts, backend-selection UI, and production credential provisioning are deferred. The provider boundary remains replaceable. |
 | D-13 | During trusted-LAN functional validation, `forge-server --lan` may run without application authentication; LAN exposure remains explicit and loopback stays the default | The user is developing on a controlled network and prioritizes proving the interaction. Pairing and production authentication are deferred, not declared unnecessary. |
 | D-14 | Opening the capture screen checks Mac health but never requests an AI plan; the user explicitly taps a compact lightbulb action for every planning image | A 10–20 second external request is planning-cadence work, not frame-cadence analysis. Explicit intent avoids surprising external calls on every launch, while one-frame delivery prevents realtime load and preserves preview responsiveness. |
+| D-15 | First camera zoom is a two-finger pinch on the existing back wide-angle device, with the applied factor shown and a tap-to-1× reset; expose at most 8× | This proves responsive zoom without adding a lens-selection abstraction. `0.5×` is a real ultra-wide/multi-camera capability, not a valid assumption about `videoZoomFactor`, so it remains a separate capability-driven slice. |
+| D-16 | Per-developer Director host configuration lives in gitignored `Config/Local.xcconfig`, included optionally by tracked `Config/Development.xcconfig` | Generated projects must preserve the endpoint without committing personal hostnames. Finder-launched Xcode does not reliably inherit shell profile variables, and project regeneration must not silently disable the feature. |
 | — | Canonical skills in `.agents/skills/`, **no `.codex/skills/`** | Codex scans `.agents/skills` and `.codex/skills` as separate roots and does **not** deduplicate — a skill reachable from both is listed twice. Verified against Codex 0.144.6. |
 | — | gitleaks **CLI** in CI, not `gitleaks-action` | The action needs a licence key for org-owned repos (free for one repo, paid beyond). The CLI is MIT with no key. Version and SHA-256 both pinned. |
 | — | `GuidanceCueFormatter` lives in `ForgeCore`, not the app | Pure, no UI dependency, and it is the single point where "never fabricate precision" becomes visible text. In the package, `swift test` covers it everywhere. |
@@ -400,6 +420,12 @@ it is now required as rectangle-or-null, and an offline recursive schema test gu
 and `make device` regenerate `Forge.xcodeproj`; an Xcode-only Personal Team selection is overwritten.
 Set `FORGE_DEVELOPMENT_TEAM` before generation if physical-device builds must remain repeatable.
 
+**A shell export is not durable Xcode app configuration.** Finder-launched Xcode does not reliably
+inherit `.zprofile`, and XcodeGen emitted the attempted `${FORGE_DIRECTOR_HOST}` setting as a
+self-reference that resolved to no build setting. The result was a valid camera build whose entire
+Director HUD silently disappeared. Use the optional gitignored `Config/Local.xcconfig`; keep the
+Director status visible even when disabled so configuration failures are explicit.
+
 **An open Xcode window can retain the package graph from before project regeneration.** The generated
 project correctly references local products `ForgeCore`, `ForgeCapture`, and `ForgeVision`, but
 running `make app`/`make project` while Xcode has `Forge.xcodeproj` open may make the window report
@@ -421,6 +447,33 @@ the generated project.
 
 Newest first. One entry per working session. Keep entries short — what changed and what
 the next agent needs to know, not a narrative.
+
+### 2026-08-21 · Codex (GPT-5) — restore Director HUD and remove legacy cue
+
+- Diagnosed the physical screenshot: the 1× zoom control renders, but the generated project had no
+  resolved `FORGE_DIRECTOR_HOST`, so `CaptureModel` chose `.disabled` and `CaptureScreen` hid the
+  entire right HUD. The bottom `Turn left` came from the pre-AI local heuristic pipeline, not the
+  Mac plan.
+- Added tracked `Config/Development.xcconfig` with an optional gitignored `Config/Local.xcconfig`.
+  The generated App now resolves `ForgeDirectorBaseURL` to the developer's configured `.local`
+  endpoint without tracking that hostname.
+- Director state/lightbulb now remain visible even if configuration is absent, and the production
+  HUD no longer renders local heuristic cue rows. The internal analysis pipeline remains intact.
+- `make check` passes with 194 tests, strict iOS type-check is clean, and the full simulator App
+  build succeeds. Next is one physical rerun after reopening the regenerated Xcode project.
+
+### 2026-08-20 · Codex (GPT-5) — interactive iPhone zoom slice
+
+- Added `CameraZoomState` and an applied-state stream to `AVFoundationFrameSource`. iOS zoom changes
+  clamp to the active device range and an 8× product ceiling, then run under
+  `lockForConfiguration()` on the existing serial session queue. macOS never touches unavailable
+  AVFoundation zoom APIs.
+- Added a full-viewfinder `MagnifyGesture`, compact monospaced factor badge, VoiceOver guidance, and
+  tap-to-1× reset. The UI displays the device-confirmed state, not a speculative gesture value.
+- Added two hardware-free clamp/quality-ceiling tests. `make check` passes with 194 tests,
+  `make ios-typecheck` is clean, and the full simulator App build succeeds.
+- Next action is physical-iPhone interaction verification. This slice does not provide 0.5×;
+  ultra-wide/multi-camera selection must be implemented and verified separately.
 
 ### 2026-08-20 · Codex (GPT-5) — physical AI-frame acceptance and commit handoff
 

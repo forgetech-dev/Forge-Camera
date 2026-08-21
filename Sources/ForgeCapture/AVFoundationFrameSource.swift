@@ -19,6 +19,8 @@ public final class AVFoundationFrameSource: FrameSource, @unchecked Sendable {
     public let frames: AsyncStream<SceneFrame<PixelBufferFrame>>
     /// Lifecycle state for a camera HUD or recovery screen. This stream has one consumer.
     public let statuses: AsyncStream<CaptureStatus>
+    /// Applied zoom state for the camera HUD. This stream has one consumer.
+    public let zoomStates: AsyncStream<CameraZoomState>
 
     /// The run currently delivering frames. Read from `videoQueue`, which owns it.
     public var currentRunID: UInt64 {
@@ -42,6 +44,7 @@ public final class AVFoundationFrameSource: FrameSource, @unchecked Sendable {
     let videoQueue = DispatchQueue(label: "dev.forge.photographer.capture.video")
     let frameDelivery: VideoFrameDelivery
     let statusContinuation: AsyncStream<CaptureStatus>.Continuation
+    let zoomContinuation: AsyncStream<CameraZoomState>.Continuation
     private let applicationIsBackgrounded: @Sendable () async -> Bool
     private let authorization: any CameraAuthorization
 
@@ -58,6 +61,8 @@ public final class AVFoundationFrameSource: FrameSource, @unchecked Sendable {
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
     var notificationObservers: [NSObjectProtocol] = []
+    /// Active input device. Accessed only on `sessionQueue` after initialization.
+    var activeVideoDevice: AVCaptureDevice?
 
     /// Creates an idle source without requesting permission or starting camera hardware.
     public convenience init() {
@@ -94,6 +99,12 @@ public final class AVFoundationFrameSource: FrameSource, @unchecked Sendable {
         statusContinuation = statusChannel.continuation
         statusContinuation.yield(.idle)
 
+        let zoomChannel = AsyncStream<CameraZoomState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        zoomStates = zoomChannel.stream
+        zoomContinuation = zoomChannel.continuation
+
         installSessionObservers()
         installApplicationObservers()
     }
@@ -104,6 +115,7 @@ public final class AVFoundationFrameSource: FrameSource, @unchecked Sendable {
         notificationObservers.forEach(NotificationCenter.default.removeObserver)
         frameDelivery.finish()
         statusContinuation.finish()
+        zoomContinuation.finish()
     }
 
     /// Requests permission when needed, configures the session, and begins frame delivery.
@@ -349,6 +361,7 @@ private extension AVFoundationFrameSource {
                 session.inputs.forEach(session.removeInput)
                 session.outputs.forEach(session.removeOutput)
                 videoOutput.setSampleBufferDelegate(nil, queue: nil)
+                activeVideoDevice = nil
             }
             session.commitConfiguration()
         }
@@ -378,6 +391,10 @@ private extension AVFoundationFrameSource {
 
         try configureVideoOutput(for: device)
 
+        activeVideoDevice = device
+        #if os(iOS)
+            zoomContinuation.yield(zoomState(for: device))
+        #endif
         isConfigured = true
         succeeded = true
     }
@@ -467,23 +484,5 @@ private extension AVFoundationFrameSource {
                 frameDelivery.activate()
             }
         }
-    }
-}
-
-public extension AVFoundationFrameSource {
-    /// A preview layer driven directly by the capture session.
-    ///
-    /// Preview deliberately does **not** render the frame stream. Drawing frames
-    /// ourselves would put a copy and a draw on the analysis path and tie preview
-    /// latency to how fast analysis runs. The session feeds the preview layer and the
-    /// video output independently, which is what keeps the viewfinder responsive when
-    /// perception falls behind — and a frozen preview is a broken product in a way
-    /// that a skipped analysis frame is not.
-    ///
-    /// The session itself stays private; only this layer escapes.
-    func makePreviewLayer() -> AVCaptureVideoPreviewLayer {
-        let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill
-        return layer
     }
 }

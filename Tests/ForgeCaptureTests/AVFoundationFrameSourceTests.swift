@@ -3,6 +3,32 @@ import Testing
 
 @Suite("AVFoundation frame source")
 struct AVFoundationFrameSourceTests {
+    @Test("Camera zoom clamps requests to the supported interactive range")
+    func cameraZoomClampsRequests() {
+        let state = CameraZoomState(
+            factor: 2,
+            deviceMinimumFactor: 1,
+            deviceMaximumFactor: 6
+        )
+
+        #expect(state.clampedFactor(0.5) == 1)
+        #expect(state.clampedFactor(3.5) == 3.5)
+        #expect(state.clampedFactor(12) == 6)
+        #expect(state.clampedFactor(.infinity) == 1)
+    }
+
+    @Test("Interactive zoom has a deliberate quality ceiling")
+    func cameraZoomUsesQualityCeiling() {
+        let state = CameraZoomState(
+            factor: 20,
+            deviceMinimumFactor: 1,
+            deviceMaximumFactor: 100
+        )
+
+        #expect(state.factor == 8)
+        #expect(state.maximumFactor == 8)
+    }
+
     @Test("Construction is hardware-free and begins idle")
     func constructionDoesNotStartCamera() async {
         let source = AVFoundationFrameSource()

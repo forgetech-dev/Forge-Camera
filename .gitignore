@@ -43,6 +43,7 @@ Secrets.swift
 *.cer
 *.certSigningRequest
 Config.local.*
+Config/Local.xcconfig
 *.local.toml
 *.local.json
 !.claude/settings.json

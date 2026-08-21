@@ -9,7 +9,7 @@ import SwiftUI
 /// chrome is pinned to the edges so the centre of the frame stays clear.
 struct CaptureScreen: View {
     @State private var model = CaptureModel()
-    private let formatter = GuidanceCueFormatter()
+    @State private var pinchStartZoomFactor: Double?
 
     var body: some View {
         Group {
@@ -48,10 +48,11 @@ struct CaptureScreen: View {
                 statusBar
                 directorAdvice
                 Spacer()
-                cues
+                zoomControl
             }
             .padding()
         }
+        .simultaneousGesture(zoomGesture)
     }
 
     private func unavailable(_ error: CaptureError) -> some View {
@@ -85,15 +86,13 @@ struct CaptureScreen: View {
 
             Spacer()
 
-            if model.directorStatus != .disabled {
-                Label(directorStatusText, systemImage: directorStatusSymbol)
-                    .font(.footnote.weight(.medium))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.regularMaterial, in: Capsule())
+            Label(directorStatusText, systemImage: directorStatusSymbol)
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.regularMaterial, in: Capsule())
 
-                directorPlanButton
-            }
+            directorPlanButton
         }
     }
 
@@ -122,6 +121,41 @@ struct CaptureScreen: View {
     }
 
     @ViewBuilder
+    private var zoomControl: some View {
+        if let zoomState = model.zoomState {
+            Button {
+                model.resetZoom()
+            } label: {
+                Text("\(zoomState.factor, specifier: "%.1f")×")
+                    .font(.callout.weight(.semibold).monospacedDigit())
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 6)
+            .background(.regularMaterial, in: Capsule())
+            .accessibilityLabel("Camera zoom")
+            .accessibilityValue("\(zoomState.factor, specifier: "%.1f") times")
+            .accessibilityHint("Pinch the viewfinder to zoom, or tap to return to one times")
+        }
+    }
+
+    private var zoomGesture: some Gesture {
+        MagnifyGesture(minimumScaleDelta: 0.01)
+            .onChanged { value in
+                guard let currentFactor = model.zoomState?.factor else { return }
+                let startFactor = pinchStartZoomFactor ?? currentFactor
+                if pinchStartZoomFactor == nil {
+                    pinchStartZoomFactor = currentFactor
+                }
+                model.setZoomFactor(startFactor * Double(value.magnification))
+            }
+            .onEnded { _ in
+                pinchStartZoomFactor = nil
+            }
+    }
+
+    @ViewBuilder
     private var directorAdvice: some View {
         let advice = Array((model.directorPlan?.displayAdvice ?? []).prefix(2))
         if !advice.isEmpty {
@@ -147,28 +181,6 @@ struct CaptureScreen: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Composition advice")
             .accessibilityValue(advice.joined(separator: ". "))
-        }
-    }
-
-    /// At most one row per actor, as the engine already guarantees. Rendering more
-    /// would mean the budget was not being respected somewhere upstream.
-    private var cues: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(model.guidance.cues.enumerated()), id: \.offset) { _, cue in
-                HStack(spacing: 8) {
-                    Text(formatter.text(for: cue))
-                        .font(.headline)
-                    if let rotation = formatter.rotationText(for: cue) {
-                        Text(rotation)
-                            .font(.headline.monospacedDigit())
-                            .foregroundStyle(.yellow)
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-            }
         }
     }
 

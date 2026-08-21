@@ -33,6 +33,9 @@ targets:
   ForgePhotographer:
     type: application
     platform: iOS
+    configFiles:
+      Debug: Config/Development.xcconfig
+      Release: Config/Development.xcconfig
     sources:
       - path: App
         excludes:
@@ -81,7 +84,4 @@ targets:
         # Leaving it unset is fine for simulator builds, which need no signing.
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ${FORGE_DEVELOPMENT_TEAM}
-        # Development-only Mac endpoint. Set this to the Mac's LocalHostName plus
-        # `.local` before regenerating the project.
-        FORGE_DIRECTOR_HOST: ${FORGE_DIRECTOR_HOST}
         GENERATE_INFOPLIST_FILE: NO
