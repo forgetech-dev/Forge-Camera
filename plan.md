@@ -734,12 +734,19 @@ workspace, decodes the schema-constrained output, verifies the request identity,
 and three display suggestions each in 13.28 and 10.19 seconds. This proves repeat execution on the
 selected path, not yet subject-agnostic behavior, stability, or an acceptable latency distribution.
 
-The next incremental slice also passes: `forge-server` exposes `GET /health` and multipart
+The next incremental slices also pass: `forge-server` exposes `GET /health` and multipart
 `POST /v1/plan` on `127.0.0.1:8765`, with bounded headers and image bodies, JPEG/PNG-only input,
 stable redacted errors, and no logging of photographs or credentials. A real `curl` request completed
-the HTTP → image sanitizer → Codex → validated `CompositionPlan` path. The unauthenticated listener
-is deliberately loopback-only. iPhone/LAN access remains unbuilt and must add a per-session pairing
-token before binding to a non-loopback interface.
+the HTTP → image sanitizer → Codex → validated `CompositionPlan` path. An explicit `--lan` mode can
+now bind the development server to the trusted local network without application authentication,
+and an iPhone `DirectorHTTPClient` verifies `/health` from a configured Mac `.local` hostname.
+Opening the App performs only that health check; a compact lightbulb action explicitly requests each
+plan. Every tap takes one newly delivered owned live frame without adding another realtime stream
+consumer, encodes it off-main as a metadata-free JPEG with a 1024-pixel maximum edge, uploads it as
+multipart, and validates the returned `CompositionPlan`. The camera still uses
+`HeuristicDirector` for typed realtime guidance, but the retained remote plan now drives the single
+visible `targetFrame` and at most two lines of display-only advice. Local arbitrary-region tracking
+and the visual-anchor acquisition stage remain separate follow-up slices.
 
 **Exit:** F-04, F-05, F-12–F-15 against a real model; N-03, N-04, N-05, N-10 verified; a person,
 animal, object, and scene-level theme each complete the same interaction; killing the server degrades
@@ -843,7 +850,8 @@ are held to a lower bar.
 | D-7 | Live textual advice is short and display-only | Text can explain the shot, but deterministic structured geometry and typed cues must remain the only control state. |
 | D-9 | The target frame is the only user-facing framing geometry; there are no coordinate sliders. The user either moves the camera to match it or taps it to select post-capture auto-crop | One direct spatial affordance keeps composition understandable. Auto-crop is an explicit choice applied to the captured still, not a preview transform or a claim that a photo already exists. |
 | D-12 | The Phase 3 functional prototype starts on a trusted development Mac by invoking its installed, already-authenticated Codex CLI; the iPhone reaches it through `forge-server` only after a Mac-only image-to-plan spike passes | This is the shortest replaceable path to validate AI photographic judgment. It keeps OpenAI credentials off the phone and out of the repository while deferring BYOK, account UI, and production deployment. It is a prototype choice, not a permanent backend lock-in. |
-| D-13 | The development `forge-server` may run without application authentication only while hard-bound to `127.0.0.1`; LAN exposure requires a per-session pairing token first | This keeps the smallest local validation path simple without turning an arbitrary device on the local network into an unauthenticated Codex client. |
+| D-13 | During trusted-LAN functional validation, `forge-server --lan` may run without application authentication; LAN exposure remains explicit and loopback stays the default | The prototype prioritizes proving iPhone-to-Mac behavior. Pairing, tokens, and production credential design are intentionally deferred and must be revisited before use outside a controlled development network. |
+| D-14 | Opening the capture screen checks Mac health but never requests an AI plan; the user explicitly taps a compact lightbulb action for every planning image | Remote planning is slow and externally metered. User intent is the clearest initial cadence, prevents surprise requests on every launch, and still keeps each action to one sanitized frame. |
 
 ### Decisions to confirm before phase 0 closes
 

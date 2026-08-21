@@ -44,6 +44,8 @@ targets:
         product: ForgeCapture
       - package: ForgeCamera
         product: ForgeVision
+      - package: ForgeCamera
+        product: ForgeBridge
     info:
       path: App/Info.plist
       properties:
@@ -64,8 +66,11 @@ targets:
         NSLocalNetworkUsageDescription:
           AI Photographer connects to a Mac on your local network to control an
           external camera and to plan shots.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSBonjourServices:
           - _forge-bridge._tcp
+        ForgeDirectorBaseURL: "http://$(FORGE_DIRECTOR_HOST):8765"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.forge.photographer
@@ -76,4 +81,7 @@ targets:
         # Leaving it unset is fine for simulator builds, which need no signing.
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ${FORGE_DEVELOPMENT_TEAM}
+        # Development-only Mac endpoint. Set this to the Mac's LocalHostName plus
+        # `.local` before regenerating the project.
+        FORGE_DIRECTOR_HOST: ${FORGE_DIRECTOR_HOST}
         GENERATE_INFOPLIST_FILE: NO

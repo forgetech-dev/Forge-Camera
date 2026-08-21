@@ -18,6 +18,7 @@ final class VideoFrameDelivery: NSObject,
     private var isActive = false
     private var appliedRotationAngle: CGFloat = 0
     private var isMirrored = false
+    private var planningFrameContinuation: CheckedContinuation<PixelBufferFrame?, Never>?
     /// Identifies the current continuous run. Bumped on every activation so a frame
     /// buffered before a stop, a backgrounding, or a runtime restart is recognisable
     /// as stale once delivery resumes.
@@ -67,6 +68,8 @@ final class VideoFrameDelivery: NSObject,
             ),
             content: pixels
         )
+        planningFrameContinuation?.resume(returning: pixels)
+        planningFrameContinuation = nil
         _ = continuation.yield(frame)
     }
 
@@ -99,6 +102,15 @@ final class VideoFrameDelivery: NSObject,
 
     func deactivate() {
         isActive = false
+        planningFrameContinuation?.resume(returning: nil)
+        planningFrameContinuation = nil
+    }
+
+    func requestPlanningFrame(
+        _ continuation: CheckedContinuation<PixelBufferFrame?, Never>
+    ) {
+        planningFrameContinuation?.resume(returning: nil)
+        planningFrameContinuation = continuation
     }
 
     private func cameraIntrinsics(from sampleBuffer: CMSampleBuffer) -> CameraIntrinsics? {
@@ -116,6 +128,8 @@ final class VideoFrameDelivery: NSObject,
     }
 
     func finish() {
+        planningFrameContinuation?.resume(returning: nil)
+        planningFrameContinuation = nil
         continuation.finish()
     }
 }

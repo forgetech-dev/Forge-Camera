@@ -13,14 +13,14 @@ link to it instead of copying it.
 
 ## Current state
 
-**Last updated:** 2026-08-20 · **Phase:** 1 complete, 2 vertical slice closed; loopback real-AI server passes
+**Last updated:** 2026-08-20 · **Phase:** 1 complete, 2 vertical slice closed; AI target-frame presentation accepted on iPhone
 
 | | |
 |---|---|
-| Tests | 182, all passing |
+| Tests | 192, all passing |
 | `make check` | Passing (format, lint, build, test, skills, boundaries) |
 | CI | The Swift 6.1 and boundaries fixes are pushed on `origin/main`; the remote run after the latest commit has not been checked in this session. |
-| Device status | The user confirmed the clean live-camera baseline and deterministic single target frame on an iPhone: preview runs, the frame and outside scrim render correctly in portrait, and the rejected two-box UI, slider harness, and synthetic Compose screen are absent. Landscape still needs a direct visual check. Quantitative N-01/N-02 measurements and broad device coverage remain undone. |
+| Device status | The user confirmed the clean live-camera baseline, `Mac connected`, manual lightbulb planning, `Plan received`, the AI-selected target frame/outside scrim, and two-line advice presentation on an iPhone in portrait. A photographed beverage can was selected and framed coherently; the user accepted the result. The rejected two-box UI, slider harness, and synthetic Compose screen are absent. Landscape, quantitative N-01/N-02 measurements, and broad device coverage remain undone. |
 
 ### Built and verified
 
@@ -60,13 +60,18 @@ read-only sandboxing, and a strict output schema. It decodes into `CompositionPl
 request identity, and applies `PlanValidator`. The CLI owns existing authentication; the module does
 not read or copy credentials. The command is explicit: `make codex-spike IMAGE=/path/to/image.jpg`.
 
-`ForgeBridge` + `forge-server` — the first development HTTP boundary around that provider.
-`GET /health` is local-only and never invokes planning. Multipart `POST /v1/plan` accepts one field
+`ForgeBridge` + `forge-server` — the development HTTP boundary around that provider.
+`GET /health` never invokes planning. Multipart `POST /v1/plan` accepts one field
 named `image`, bounds headers and body size, permits JPEG/PNG only, stages a generic temporary file,
 and returns root `CompositionPlan` JSON or a stable redacted error. The executable is a narrow
 composition root that injects `CodexDirectorSpike`; bridge code has no Codex dependency. The server
-hard-binds IPv4 `127.0.0.1:8765`, handles one request at a time, and logs neither request images nor
-credentials. `make server`, health `curl`, and a real HTTP image-to-plan request all pass.
+defaults to IPv4 `127.0.0.1:8765`; explicit `make server-lan` binds `0.0.0.0` without application
+authentication for the user's trusted development network. It handles one request at a time and logs
+neither request images nor credentials. The shared `DirectorHTTPClient` validates the health status
+with a three-second timeout and typed failures; it also uploads one JPEG as multipart, decodes the
+root `CompositionPlan`, and applies `PlanValidator` before returning it. `PlanningImageEncoder`
+renders a fresh metadata-free JPEG with a 1024-pixel maximum edge. Loopback and `.local`-hostname
+health curls plus a real HTTP image-to-plan request all pass.
 
 `CapturePipeline` (in `ForgeCore`) — the spine. Frames in, guidance out, with the three rates kept
 separate: analysis per frame, planning on the trigger policy, guidance recomputed every frame from
@@ -75,7 +80,9 @@ discharged. Free of randomness, hence replay-deterministic.
 
 `ForgeCapture` — initial AVFoundation source: permission and lifecycle status, a serial session
 queue, back-camera 1080p/NV12 configuration, RotationCoordinator, camera intrinsics delivery,
-newest-one frame streaming, bounded buffer-copy pool, and typed actionable errors. Synthetic
+newest-one frame streaming, bounded buffer-copy pool, and typed actionable errors. A one-shot
+planning-frame request receives the next independently owned frame without adding another
+long-lived consumer or interfering with the analysis stream. Synthetic
 sample-buffer tests verify ownership, metadata, drop accounting, and back-pressure without hardware.
 Permission is now behind the `CameraAuthorization` seam, so the lifecycle races that matter —
 concurrent starts, task cancellation, stopping mid-prompt, backgrounding mid-prompt — are pinned by
@@ -90,13 +97,26 @@ the frame stream, so a slow analysis pass cannot stall the viewfinder. The app i
 to a clean live-camera baseline: camera preview, compact status, typed cues, and future-safe
 horizon/avoid-region overlay only. There is no Compose button, synthetic gray composition screen,
 stage picker, or slider harness. Raw current/target subject rectangles were removed from
-`OverlayModel` and `GuidanceEngine`, not merely hidden. The real preview now renders one large,
-deterministic target frame with a restrained outside scrim to validate the production presentation
-and coordinate path. `visualAnchor`, `targetFrame`, and display-only advice remain the new
-Director-to-presentation contract; the deterministic frame is not AI-selected yet.
+`OverlayModel` and `GuidanceEngine`, not merely hidden. The real preview now renders the retained AI
+plan's single validated `targetFrame` with a restrained outside scrim through the tested aspect-fill
+mapping. Before a valid plan exists there is no target frame. The App also shows at most two
+single-line `displayAdvice` suggestions in compact material at the top edge. Advice remains
+display-only; no logic branches on its wording. `visualAnchor` remains the next part of the
+Director-to-presentation contract after local tracking exists.
 The HUD does not present `GuidanceState.Readiness.ready` as a user-facing “Ready” badge: until a
 valid composition plan is active, that state only means there is no correction cue, not that the
 photograph is ready to take.
+
+When `FORGE_DIRECTOR_HOST` was present while generating the Xcode project, the App performs one
+startup `/health` check against `http://<host>:8765` and stops at `Mac connected`; opening the App
+never invokes Codex. A compact top-right lightbulb explicitly requests a plan. Each tap receives one
+newly delivered live frame, encodes it off the main actor as a maximum-1024-pixel metadata-free JPEG,
+uploads it to `/v1/plan`, validates the response, and retains the resulting `CompositionPlan`.
+While one request is in flight the action is disabled and displays a progress indicator; after
+success or failure it can be tapped again for a fresh frame. The compact badge reports
+`AI analyzing`, then `Plan received` or `Plan failed`. A successful plan drives the visible frame and
+advice immediately; a failed retry leaves the prior valid plan latched. The typed realtime guidance
+pipeline still uses `HeuristicDirector`.
 
 Verified in the simulator, end to end: the permission prompt appears with the real purpose string
 and the HUD shows `awaitingPermission`; granting it then advances to session configuration, fails
@@ -115,8 +135,10 @@ preview/guidance alignment, latency, and every performance budget (N-01, N-02) r
 F-01/F-02 are qualitatively proven on one device; F-03 is not satisfied because dropout stability is
 not working as intended.
 
-Most of Phase 3 onward remains unbuilt: LAN/pairing and app-side network Director, phone
-planning-image delivery, capture and review loop, and all external-camera work. Horizon, lighting, and device motion are still `nil` in
+Most of Phase 3 onward remains unbuilt: AI-plan-driven typed guidance, repeated/event-driven
+planning, capture and review loop, and all external-camera work. The development LAN health path is
+confirmed on one physical iPhone; the user-triggered planning-image action is awaiting its next
+physical run. Horizon, lighting, and device motion are still `nil` in
 `SceneState` — `VisionSceneAnalyzer` reports subjects only, so levelling and exposure guidance have
 no input yet. CoreMotion gravity is the cheap next win there.
 
@@ -126,9 +148,10 @@ were 13.28 and 10.19 seconds. V-6 remains partial because person, object, and sc
 a latency distribution have not been measured.
 
 The newly confirmed Phase 3 product interaction is still mostly unbuilt. Its core plan contract,
-presentation state, development Codex provider, and loopback HTTP server exist, but the discarded
-synthetic interaction preview is gone. Live-camera planning-image delivery, an app-side network
-`DirectorProvider`, LAN pairing/discovery, user override, local arbitrary-region
+presentation state, development Codex provider, LAN-capable HTTP server, one-shot live-camera
+planning request, AI target frame, and concise advice exist, but the discarded synthetic interaction
+preview is gone. A reusable
+app-side network `DirectorProvider`, discovery, user override, local arbitrary-region
 tracking, automatic anchor-to-frame transition, AI-driven live-preview rendering, photo capture,
 and actual still-image cropping do not.
 
@@ -136,17 +159,16 @@ and actual still-image cropping do not.
 
 ## In flight
 
-**Uncommitted work contains the additive composition contract plus the clean-baseline correction:**
-`CaptureScreen`, `CaptureModel`, `GuidanceOverlayView`, removal of `GuidancePreviewScreen`,
-`PreviewGeometry` and its tests, guidance presentation state/mapping and its core test, the new
-`ForgeDirectorCodex` spike/module/tests, `ForgeBridge`, `forge-server`, their endpoint tests,
-`plan.md`, `README.md`, the UI guidance skill reference, and this handoff. The contract slice is committed and pushed as
-`070177a`; later UI work is not committed.
+**Uncommitted work contains two consecutive trusted-development slices:** explicit
+`forge-server --lan` plus iPhone health state, followed by user-triggered one-shot live-frame
+sanitization, multipart `/v1/plan` upload, validated-plan retention, App progress HUD/action,
+AI-driven frame/advice presentation, tests, docs, and this handoff. The preceding loopback server
+and composition/UI work is committed as `a4ce5a9`.
 
-**The checked-out `Forge.xcodeproj` is regenerated for the deletions.** Its PBX file contains no
-references to `GuidancePreviewScreen` or `AIComposeOverlayView`; local package resolution and the
-formal project build both pass. Xcode was open during regeneration, so its current window may still
-hold the old in-memory project. Quit Xcode and reopen `Forge.xcodeproj` before the next phone run.
+**The checked-out `Forge.xcodeproj` is regenerated with the current Mac `.local` host and the new
+`ForgeBridge` App dependency.** Its PBX file contains no references to `GuidancePreviewScreen` or
+`AIComposeOverlayView`; local package resolution and the formal project build pass. If Xcode was
+already open, quit it and reopen `Forge.xcodeproj` before the next phone run.
 
 The prior Swift portability/CI fixes are committed and pushed as `cd9db89` and `45de3bb`.
 
@@ -171,14 +193,23 @@ The prior Swift portability/CI fixes are committed and pushed as `cd9db89` and `
 8. ~~Wrap the provider in a minimal loopback-only `forge-server`.~~ **Done** — `GET /health` and
    multipart `POST /v1/plan` pass endpoint tests and a real localhost `curl`; `make check` passes
    with 182 tests. The listener is deliberately restricted to `127.0.0.1`.
-9. Add a development per-session pairing token, explicitly enable a LAN listener, and implement the
-   iPhone HTTP `DirectorProvider` plus privacy-sanitized selected-frame delivery. Preserve
-   structured-state-only degradation; do not expose arbitrary prompts or shell execution.
-10. Initialize local arbitrary-region tracking from the AI selection and support tap-to-replace.
-11. Replace the deterministic frame source with the selected AI plan and automatic
-   visual-anchor-to-target-frame transition.
-12. Add still capture, then implement the selected crop against captured pixels with review/undo.
-13. Record and replay real sessions, then measure N-01/N-02 and tune stability. CoreMotion horizon and
+9. ~~Explicitly enable a trusted-development LAN listener and add the iPhone `/health` client.~~
+   **Implemented and confirmed on a physical iPhone** without application authentication per
+   revised D-13. The phone shows `Mac connected` through the configured Mac `.local` hostname.
+10. ~~Add privacy-sanitized selected-frame delivery and an explicit iPhone plan action.~~
+   **Implemented and confirmed on a physical iPhone.** Opening the App only checks health. A compact
+   top-right lightbulb requests the next independently owned live frame, re-encodes it off-main with
+   a 1024-pixel edge bound and no source metadata, validates the returned plan, and retains it
+   without changing the overlay. The action coalesces while in flight and supports later retries.
+   On-device success is `AI analyzing` → `Plan received`; failure degrades to `Plan failed`.
+11. Initialize local arbitrary-region tracking from the AI selection and support tap-to-replace.
+12. ~~Replace the deterministic frame source with the retained AI plan and show its short advice.~~
+   **Implemented and accepted on a physical iPhone in portrait.** Before the first valid plan the overlay
+   shows no target frame. Success shows the validated frame and at most two single-line suggestions;
+   a failed retry keeps the previous plan. Automatic visual-anchor-to-target-frame transition
+   follows only after local tracking exists.
+13. Add still capture, then implement the selected crop against captured pixels with review/undo.
+14. Record and replay real sessions, then measure N-01/N-02 and tune stability. CoreMotion horizon and
    frame-statistics lighting follow once the new core composition loop is trustworthy.
 
 The stale-buffered-frame limitation is **resolved and discharged**: `CapturePipeline.run()` applies
@@ -242,7 +273,8 @@ survives, not just the conclusion.
 | D-10 | Do not expose core `Readiness.ready` as a shot-ready HUD badge until a valid composition plan and measurable target constraints are active | With no actionable plan, `.ready` can mean only “no correction cue”; presenting it as “Ready” fabricates confidence in the composition. |
 | D-11 | Every image-space overlay maps through tested aspect-fill geometry using orientation-corrected frame dimensions and explicit preview mirroring | Multiplying normalized coordinates by view size is wrong whenever `.resizeAspectFill` crops the camera image, and independently reapplying rotation causes a second transform. |
 | D-12 | The first real-AI validation runs on a trusted development Mac through its installed, already-authenticated Codex CLI; first prove a Mac-only image-to-`CompositionPlan` spike, then place it behind `forge-server` for iPhone access | This minimizes prototype work and keeps OpenAI credentials off the phone and out of the repository. BYOK, user accounts, backend-selection UI, and production credential provisioning are deferred. The provider boundary remains replaceable. |
-| D-13 | An unauthenticated development planning endpoint may bind only to `127.0.0.1`; any LAN listener requires a per-session pairing token first | The loopback slice can stay minimal without allowing another local-network device to spend the Mac user's Codex account or submit arbitrary images. |
+| D-13 | During trusted-LAN functional validation, `forge-server --lan` may run without application authentication; LAN exposure remains explicit and loopback stays the default | The user is developing on a controlled network and prioritizes proving the interaction. Pairing and production authentication are deferred, not declared unnecessary. |
+| D-14 | Opening the capture screen checks Mac health but never requests an AI plan; the user explicitly taps a compact lightbulb action for every planning image | A 10–20 second external request is planning-cadence work, not frame-cadence analysis. Explicit intent avoids surprising external calls on every launch, while one-frame delivery prevents realtime load and preserves preview responsiveness. |
 | — | Canonical skills in `.agents/skills/`, **no `.codex/skills/`** | Codex scans `.agents/skills` and `.codex/skills` as separate roots and does **not** deduplicate — a skill reachable from both is listed twice. Verified against Codex 0.144.6. |
 | — | gitleaks **CLI** in CI, not `gitleaks-action` | The action needs a licence key for org-owned repos (free for one repo, paid beyond). The CLI is MIT with no key. Version and SHA-256 both pinned. |
 | — | `GuidanceCueFormatter` lives in `ForgeCore`, not the app | Pure, no UI dependency, and it is the single point where "never fabricate precision" becomes visible text. In the package, `swift test` covers it everywhere. |
@@ -389,6 +421,96 @@ the generated project.
 
 Newest first. One entry per working session. Keep entries short — what changed and what
 the next agent needs to know, not a narrative.
+
+### 2026-08-20 · Codex (GPT-5) — physical AI-frame acceptance and commit handoff
+
+- The user supplied a physical-iPhone screenshot after analyzing a beverage can. The App shows
+  `Plan received`, one coherent AI target frame with the outside scrim, and two concise advice rows
+  below the top status strip; the user accepted this slice.
+- Verified the pending commit contains only the trusted-LAN/manual-planning/AI-presentation work.
+  Tracked configuration uses `$(FORGE_DIRECTOR_HOST)` rather than a real hostname, and no credential
+  or token is present. The next product slice remains local arbitrary-region tracking and visual
+  anchor acquisition, not more remote-planning plumbing.
+
+### 2026-08-20 · Codex (GPT-5) — AI frame and advice presentation
+
+- Removed the deterministic development rectangle. `CaptureScreen` now passes only the retained
+  validated `directorPlan.framing.targetFrame` into the existing aspect-fill-aware overlay, so no
+  target frame appears before a successful manual request.
+- Added a compact material advice strip directly below the top status row. It renders the first two
+  `displayAdvice` entries as at most two single lines with a VoiceOver value; prose remains
+  display-only and no logic inspects its wording.
+- A new request leaves the prior plan visible while in flight, and the existing failure path does not
+  clear it. A successful minimal plan without a target frame correctly removes the old frame because
+  the new Director has no framing opinion.
+- No tracking, anchor acquisition, crop, capture, or automatic planning was added. `make check`
+  passes with 192 tests; strict iOS device-SDK type-check and the full simulator App build with the
+  current Mac `.local` host also pass. A physical-iPhone visual check is next.
+
+### 2026-08-20 · Codex (GPT-5) — physical manual-plan success
+
+- The user confirmed the new startup behavior and top-right lightbulb on an iPhone. Opening the App
+  no longer invokes planning; tapping the action completes and displays `Plan received`.
+- This physically proves live-frame ownership/encoding, phone multipart upload, trusted-LAN routing,
+  Mac Codex invocation, response decoding, and phone-side plan validation as one path.
+- No code changed. Next agile slice: replace only the deterministic overlay rectangle with the
+  retained plan's validated `framing.targetFrame`, hide the AI frame before any valid plan exists,
+  retain the last valid frame if a later retry fails, and show concise display advice separately.
+  Do not add tracking, capture, crop, or automatic replanning yet.
+
+### 2026-08-20 · Codex (GPT-5) — manual lightbulb planning action
+
+- At the user's direction, removed the automatic `/v1/plan` request from App startup. Startup now
+  stops after `/health` and `Mac connected`; it does not send a camera image or invoke Codex.
+- Added a compact top-right lightbulb with a 16pt SF Symbol and a 44pt accessible hit target. Each
+  tap requests one fresh frame; the control shows a static progress indicator and is disabled while
+  the request is in flight, then allows retry after success or failure.
+- Split health and planning task ownership in `CaptureModel`; stop cancels both independently.
+  Added a hardware-free test proving two separate actions receive two separately owned new frames.
+- Recorded D-14 in `plan.md` and updated development instructions. `make check` passes with 192
+  tests; the strict device-SDK Swift 6 type-check and full simulator App build with the current Mac
+  `.local` host also pass. The new action still needs a physical-iPhone visual/behavior check.
+
+### 2026-08-20 · Codex (GPT-5) — physical plan-failure diagnosis
+
+- The first phone run passed health (`Mac connected`) but ended at the intentionally coarse
+  `Plan failed` state. No underlying error is currently surfaced or logged by the App.
+- The user immediately exercised the same running server with a 1.09 MB multipart JPEG: HTTP 200,
+  a valid structured plan, and 11.74-second total latency. This rules out a persistent server,
+  Codex-authentication, endpoint, or schema failure; phone retry timing is the next discriminator.
+- No code changed. If the failure repeats, expose a typed development failure (`timeout`, HTTP
+  status, encoding, invalid plan) rather than increasing timeouts blindly.
+
+### 2026-08-20 · Codex (GPT-5) — one-shot iPhone planning request
+
+- After the user confirmed `Mac connected` on the physical phone, added a queue-confined one-shot
+  handoff that returns the next owned camera frame without consuming or duplicating the realtime
+  analysis stream.
+- Added `PlanningImageEncoder`: off-main pixel rendering to a fresh JPEG, maximum 1024-pixel edge,
+  quality 0.78, and no copied source metadata. Added multipart `DirectorHTTPClient.plan`, root-plan
+  decoding, and `PlanValidator` enforcement.
+- The App now automatically performs one request after health succeeds and exposes compact
+  `AI analyzing`, `Plan received`, or `Plan failed` states. It retains the plan but deliberately
+  leaves the deterministic overlay unchanged for this validation slice.
+- `make check` passes with 191 tests; device-SDK Swift 6 type-check and a full simulator App build
+  with the current Mac `.local` host both pass. Next: run on the phone while `make server-lan` is
+  active and confirm `Plan received`; then bind `targetFrame` and advice to the live overlay.
+
+### 2026-08-20 · Codex (GPT-5) — trusted-LAN iPhone health slice
+
+- Revised D-13 at the user's direction: functional validation runs on a trusted LAN without an
+  application token. `make server` remains loopback by default; explicit `make server-lan`/
+  `forge-server --lan` binds `0.0.0.0:8765`.
+- Added the shared, typed `DirectorHTTPClient`. Its first operation is a three-second, no-cache
+  `/health` check; four offline tests cover healthy, HTTP-error, invalid-payload, and explicit-bind
+  behavior.
+- Added `FORGE_DIRECTOR_HOST` build configuration and local-network ATS allowance. When configured,
+  the App performs one startup health check and shows a compact `Checking Mac`, `Mac connected`, or
+  `Mac unavailable` top-edge badge. It still uses `HeuristicDirector` and sends no image.
+- `make server-lan` plus a curl through the Mac's `.local` hostname passes locally. `make check`
+  passes with 186 tests; device-SDK Swift 6 type-check and the full simulator App build also pass.
+  Physical-iPhone permission/connectivity confirmation is the required next validation before
+  implementing frame upload.
 
 ### 2026-08-20 · Codex (GPT-5) — loopback `forge-server` slice
 

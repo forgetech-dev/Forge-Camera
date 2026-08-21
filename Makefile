@@ -6,7 +6,7 @@
 # `build` and `test` must stay hardware-free forever: no camera, no API key,
 # no network. That is the contributor promise.
 
-.PHONY: help build test check lint format clean skills release project app sim device ios-typecheck boundaries format-check codex-spike server
+.PHONY: help build test check lint format clean skills release project app sim device ios-typecheck boundaries format-check codex-spike server server-lan
 
 SWIFT_FLAGS = -Xswiftc -warnings-as-errors
 XCODEGEN_VERSION = 2.46.0
@@ -23,6 +23,7 @@ help:
 	@echo "  make clean    Remove build artifacts"
 	@echo "  make codex-spike IMAGE=/path/to/image.jpg"
 	@echo "  make server   Run the development server on 127.0.0.1:8765"
+	@echo "  make server-lan   Run the unauthenticated development server on the LAN"
 	@echo ""
 	@echo "Hardware and external-service tests are excluded from 'make test'."
 
@@ -94,10 +95,14 @@ codex-spike:
 	fi
 	swift run forge-director-codex-spike --image "$(IMAGE)"
 
-# Development-only loopback server. It has no LAN exposure or auth surface yet.
 # A plan request explicitly invokes the external Codex service; /health does not.
 server:
 	swift run forge-server
+
+# Functional-validation mode for a trusted development network. This intentionally
+# has no application authentication; do not use it on an untrusted network.
+server-lan:
+	swift run forge-server --lan
 
 # The pre-push gate. Anything that fails here fails in CI.
 check: format-check lint build test skills boundaries

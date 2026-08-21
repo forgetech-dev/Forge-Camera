@@ -71,6 +71,64 @@ struct VideoFrameDeliveryTests {
         delivery.finish()
     }
 
+    @Test("A planning request receives one owned frame without consuming the analysis stream")
+    func oneShotPlanningFrame() async throws {
+        let channel = AsyncStream<SceneFrame<PixelBufferFrame>>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        let delivery = VideoFrameDelivery(continuation: channel.continuation)
+        let source = try makePixelBuffer()
+        try fill(source, luma: 0x31, chroma: 0x53)
+        let sample = try makeSampleBuffer(imageBuffer: source, timestamp: .zero)
+
+        delivery.activate()
+        let planningFrame = await withCheckedContinuation { continuation in
+            delivery.requestPlanningFrame(continuation)
+            delivery.deliver(sample)
+        }
+
+        let plannedPixels = try #require(planningFrame)
+        var iterator = channel.stream.makeAsyncIterator()
+        let analysisFrame = try #require(await iterator.next())
+        #expect(plannedPixels === analysisFrame.content)
+        #expect(try firstByte(in: plannedPixels.pixelBuffer, plane: 0) == 0x31)
+        delivery.finish()
+    }
+
+    @Test("Separate planning actions receive separate newly delivered frames")
+    func repeatedPlanningFrames() async throws {
+        let channel = AsyncStream<SceneFrame<PixelBufferFrame>>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        let delivery = VideoFrameDelivery(continuation: channel.continuation)
+        let source = try makePixelBuffer()
+        delivery.activate()
+
+        try fill(source, luma: 0x12, chroma: 0x34)
+        let firstSample = try makeSampleBuffer(imageBuffer: source, timestamp: .zero)
+        let first = await withCheckedContinuation { continuation in
+            delivery.requestPlanningFrame(continuation)
+            delivery.deliver(firstSample)
+        }
+
+        try fill(source, luma: 0x56, chroma: 0x78)
+        let secondSample = try makeSampleBuffer(
+            imageBuffer: source,
+            timestamp: CMTime(value: 1, timescale: 30)
+        )
+        let second = await withCheckedContinuation { continuation in
+            delivery.requestPlanningFrame(continuation)
+            delivery.deliver(secondSample)
+        }
+
+        let firstPixels = try #require(first)
+        let secondPixels = try #require(second)
+        #expect(firstPixels !== secondPixels)
+        #expect(try firstByte(in: firstPixels.pixelBuffer, plane: 0) == 0x12)
+        #expect(try firstByte(in: secondPixels.pixelBuffer, plane: 0) == 0x56)
+        delivery.finish()
+    }
+
     private func makePixelBuffer(width: Int = 16, height: Int = 8) throws -> CVPixelBuffer {
         let attributes = [
             kCVPixelBufferIOSurfacePropertiesKey as String: [:] as CFDictionary,

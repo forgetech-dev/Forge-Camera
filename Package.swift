@@ -40,9 +40,9 @@ let package = Package(
         // scene state; never talks to the capture session or the network.
         .target(name: "ForgeVision", dependencies: ["ForgeCore", "ForgeFrame"]),
 
-        // Vendor-neutral local wire boundary. It owns HTTP framing and the
-        // loopback endpoint, but knows nothing about any concrete AI provider.
-        .target(name: "ForgeBridge", dependencies: ["ForgeCore"]),
+        // Vendor-neutral local wire boundary. It owns planning-image encoding,
+        // HTTP framing, and transport, but knows nothing about a concrete provider.
+        .target(name: "ForgeBridge", dependencies: ["ForgeCore", "ForgeFrame"]),
 
         // Development-Mac provider boundary. It owns image-to-plan behavior but
         // never HTTP transport or iPhone credentials.
@@ -60,8 +60,8 @@ let package = Package(
             path: "Tools/ForgeDirectorCodexSpike"
         ),
 
-        // Development-only Mac composition root. The first server slice binds
-        // loopback only; LAN exposure and pairing are deliberately deferred.
+        // Development-only Mac composition root. Loopback is the default; an
+        // explicit unauthenticated LAN mode exists for trusted-network validation.
         .executableTarget(
             name: "ForgeServer",
             dependencies: ["ForgeBridge", "ForgeDirectorCodex"],
@@ -89,7 +89,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ForgeBridgeTests",
-            dependencies: ["ForgeBridge", "ForgeCore"]
+            dependencies: ["ForgeBridge", "ForgeCore", "ForgeFrame"]
         ),
     ],
     swiftLanguageModes: [.v6]

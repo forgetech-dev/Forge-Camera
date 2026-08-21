@@ -8,15 +8,6 @@ import SwiftUI
 /// guidance layer sits directly on the image because it is spatial, and the status
 /// chrome is pinned to the edges so the centre of the frame stays clear.
 struct CaptureScreen: View {
-    /// A deterministic framing proposal used to validate the production preview path.
-    /// The next slice replaces this value with the Director's target frame.
-    private static let deterministicTargetFrame = NormalizedRect(
-        x: 0.15,
-        y: 0.16,
-        width: 0.7,
-        height: 0.68
-    )
-
     @State private var model = CaptureModel()
     private let formatter = GuidanceCueFormatter()
 
@@ -48,13 +39,14 @@ struct CaptureScreen: View {
             GuidanceOverlayView(
                 guidance: model.guidance,
                 frameGeometry: model.frameGeometry,
-                targetFrame: Self.deterministicTargetFrame,
+                targetFrame: model.directorPlan?.framing?.targetFrame,
                 previewMirrored: false
             )
             .ignoresSafeArea()
 
             VStack {
                 statusBar
+                directorAdvice
                 Spacer()
                 cues
             }
@@ -92,6 +84,69 @@ struct CaptureScreen: View {
                 .background(.regularMaterial, in: Capsule())
 
             Spacer()
+
+            if model.directorStatus != .disabled {
+                Label(directorStatusText, systemImage: directorStatusSymbol)
+                    .font(.footnote.weight(.medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+
+                directorPlanButton
+            }
+        }
+    }
+
+    private var directorPlanButton: some View {
+        Button {
+            model.requestDirectorPlan()
+        } label: {
+            Group {
+                if model.directorStatus == .analyzing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: model.directorPlan == nil ? "lightbulb" : "lightbulb.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .background(.regularMaterial, in: Circle())
+        .disabled(!model.canRequestDirectorPlan)
+        .opacity(model.canRequestDirectorPlan || model.directorStatus == .analyzing ? 1 : 0.45)
+        .accessibilityLabel("Analyze composition")
+        .accessibilityHint("Sends one camera frame to the connected Mac for a composition plan")
+    }
+
+    @ViewBuilder
+    private var directorAdvice: some View {
+        let advice = Array((model.directorPlan?.displayAdvice ?? []).prefix(2))
+        if !advice.isEmpty {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "lightbulb.fill")
+                    .font(.callout.weight(.semibold))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(advice.enumerated()), id: \.offset) { _, suggestion in
+                        Text(suggestion)
+                            .font(.callout.weight(.medium))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Composition advice")
+            .accessibilityValue(advice.joined(separator: ". "))
         }
     }
 
@@ -140,6 +195,30 @@ struct CaptureScreen: View {
         case .running: "camera.fill"
         case .interrupted: "exclamationmark.triangle"
         case .failed: "xmark.octagon"
+        }
+    }
+
+    private var directorStatusText: String {
+        switch model.directorStatus {
+        case .disabled: "Mac disabled"
+        case .checking: "Checking Mac"
+        case .connected: "Mac connected"
+        case .analyzing: "AI analyzing"
+        case .planReceived: "Plan received"
+        case .planFailed: "Plan failed"
+        case .unavailable: "Mac unavailable"
+        }
+    }
+
+    private var directorStatusSymbol: String {
+        switch model.directorStatus {
+        case .disabled: "desktopcomputer"
+        case .checking: "network"
+        case .connected: "desktopcomputer"
+        case .analyzing: "viewfinder"
+        case .planReceived: "checkmark.circle"
+        case .planFailed: "xmark.circle"
+        case .unavailable: "exclamationmark.triangle"
         }
     }
 }

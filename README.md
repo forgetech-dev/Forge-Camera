@@ -19,9 +19,10 @@ Read **[goal.md](goal.md)** for the full vision, architecture goals, and non-goa
 
 **Phase 1 is complete and the Phase 2 phone-camera vertical slice runs on a physical iPhone.** The
 Foundation-only domain, capture and Vision pipeline, composition guidance, deterministic director,
-tested preview geometry, and 182 hardware-free tests are working. A loopback-only Mac development
-server now accepts one image, invokes the installed Codex CLI, and returns a validated composition
-plan; phone-to-Mac LAN networking is not connected yet.
+tested preview geometry, and the hardware-free test suite are working. A Mac development server
+accepts one image, invokes the installed Codex CLI, and returns a validated composition plan. The
+iPhone can now send one sanitized live frame over a trusted LAN, render the validated AI target
+frame, and show its concise display advice. Local tracking is the next composition slice.
 
 | | |
 |---|---|
@@ -75,8 +76,23 @@ curl http://127.0.0.1:8765/health
 curl --form image=@/path/to/image.jpg http://127.0.0.1:8765/v1/plan
 ```
 
-LAN access will be added separately with an explicit development pairing token before the listener
-is allowed to leave the loopback interface.
+For the current trusted-network functional prototype, configure the generated iOS project with this
+Mac's local hostname and start the explicitly unauthenticated LAN mode:
+
+```sh
+export FORGE_DIRECTOR_HOST="$(scutil --get LocalHostName).local"
+make project
+make server-lan
+```
+
+Install or run the regenerated project on the iPhone. Its top HUD reports `Checking Mac`, then
+`Mac connected`; opening the App does not invoke Codex. Tap the small lightbulb at the top right to
+request a plan. The HUD then reports `AI analyzing`, followed by `Plan received` or `Plan failed`.
+Each tap takes one newly delivered live frame, downscales it to at most 1024 pixels, re-encodes it
+without source metadata, and invokes `/v1/plan` once. A valid response drives the single AI
+`targetFrame` and shows at most two short advice lines near the top edge. A failed retry keeps the
+previous valid plan. `make server` remains loopback-only. The LAN mode has no application
+authentication and is for a trusted development network only.
 
 The iOS project is generated rather than committed. Install XcodeGen 2.46.0, then run:
 

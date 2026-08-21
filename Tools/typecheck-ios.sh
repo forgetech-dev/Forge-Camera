@@ -46,6 +46,7 @@ emit_module ForgeCore $(find Sources/ForgeCore -name '*.swift')
 emit_module ForgeFrame $(find Sources/ForgeFrame -name '*.swift')
 emit_module ForgeCapture $(find Sources/ForgeCapture -name '*.swift')
 emit_module ForgeVision $(find Sources/ForgeVision -name '*.swift')
+emit_module ForgeBridge $(find Sources/ForgeBridge -name '*.swift')
 
 printf '  %-14s' "App"
 xcrun swiftc "${COMMON[@]}" -I "$MODULES" -typecheck App/*.swift

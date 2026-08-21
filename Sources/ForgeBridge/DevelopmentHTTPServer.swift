@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-/// Startup failures for the development loopback server.
+/// Startup failures for the development HTTP server.
 public enum ForgeBridgeError: Error, Sendable, Equatable {
     case socketCreationFailed(code: Int32)
     case bindFailed(code: Int32)
@@ -13,34 +13,52 @@ extension ForgeBridgeError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case let .socketCreationFailed(code): "Socket creation failed (errno \(code))."
-        case let .bindFailed(code): "Loopback bind failed (errno \(code))."
+        case let .bindFailed(code): "Development server bind failed (errno \(code))."
         case let .listenFailed(code): "Socket listen failed (errno \(code))."
         case let .acceptFailed(code): "Socket accept failed (errno \(code))."
         }
     }
 }
 
-/// A deliberately single-request-at-a-time HTTP/1.1 server bound to IPv4 loopback.
+/// Network exposure selected explicitly when starting the development server.
+public enum DevelopmentServerBinding: Sendable, Equatable {
+    /// Accept requests from this Mac only.
+    case loopback
+    /// Accept unauthenticated requests from the current local network.
+    case localNetwork
+
+    var ipv4Address: String {
+        switch self {
+        case .loopback: "127.0.0.1"
+        case .localNetwork: "0.0.0.0"
+        }
+    }
+}
+
+/// A deliberately single-request-at-a-time HTTP/1.1 development server.
 ///
-/// The first slice is synchronous because the upstream planning operation is already
-/// coalesced and slow. LAN exposure, concurrency, and pairing are separate later slices.
-public struct LoopbackHTTPServer: Sendable {
-    /// Fixed development endpoint shared by the server command and curl instructions.
+/// The server is synchronous because the upstream planning operation is already slow
+/// and coalesced. LAN exposure must be selected explicitly at the composition root.
+public struct DevelopmentHTTPServer: Sendable {
+    /// Fixed development endpoint shared by the server command and client configuration.
     public static let defaultPort: UInt16 = 8765
 
     private let port: UInt16
+    private let binding: DevelopmentServerBinding
     private let endpoint: PlanHTTPEndpoint
 
-    /// Creates a loopback-only server. No wildcard or LAN bind is possible through this API.
+    /// Creates a development server with explicit network exposure.
     public init(
-        port: UInt16 = LoopbackHTTPServer.defaultPort,
+        port: UInt16 = DevelopmentHTTPServer.defaultPort,
+        binding: DevelopmentServerBinding = .loopback,
         endpoint: PlanHTTPEndpoint
     ) {
         self.port = port
+        self.binding = binding
         self.endpoint = endpoint
     }
 
-    /// Binds `127.0.0.1` and serves until the process is interrupted.
+    /// Binds the selected IPv4 interface and serves until the process is interrupted.
     public func run() throws {
         let listener = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard listener >= 0 else {
@@ -62,7 +80,7 @@ public struct LoopbackHTTPServer: Sendable {
     }
 }
 
-private extension LoopbackHTTPServer {
+private extension DevelopmentHTTPServer {
     func configure(listener: Int32) throws {
         var reuseAddress: Int32 = 1
         _ = withUnsafePointer(to: &reuseAddress) { pointer in
@@ -79,7 +97,7 @@ private extension LoopbackHTTPServer {
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = port.bigEndian
-        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        address.sin_addr = in_addr(s_addr: inet_addr(binding.ipv4Address))
         let bindResult = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
                 Darwin.bind(
