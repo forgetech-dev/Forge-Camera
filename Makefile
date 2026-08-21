@@ -6,7 +6,7 @@
 # `build` and `test` must stay hardware-free forever: no camera, no API key,
 # no network. That is the contributor promise.
 
-.PHONY: help build test check lint format clean skills release project app sim device ios-typecheck boundaries format-check
+.PHONY: help build test check lint format clean skills release project app sim device ios-typecheck boundaries format-check codex-spike server
 
 SWIFT_FLAGS = -Xswiftc -warnings-as-errors
 XCODEGEN_VERSION = 2.46.0
@@ -21,6 +21,8 @@ help:
 	@echo "  make lint     Run SwiftLint if installed"
 	@echo "  make format   Run SwiftFormat if installed"
 	@echo "  make clean    Remove build artifacts"
+	@echo "  make codex-spike IMAGE=/path/to/image.jpg"
+	@echo "  make server   Run the development server on 127.0.0.1:8765"
 	@echo ""
 	@echo "Hardware and external-service tests are excluded from 'make test'."
 
@@ -81,6 +83,21 @@ ios-typecheck:
 
 release:
 	swift build -c release $(SWIFT_FLAGS)
+
+# Explicitly invokes the external Codex service. The provider downscales and
+# re-encodes one JPEG/PNG without metadata before sending it. This never runs in CI.
+codex-spike:
+	@if [ -z "$(IMAGE)" ]; then \
+		echo "IMAGE is required."; \
+		echo "Usage: make codex-spike IMAGE=/path/to/image.jpg"; \
+		exit 1; \
+	fi
+	swift run forge-director-codex-spike --image "$(IMAGE)"
+
+# Development-only loopback server. It has no LAN exposure or auth surface yet.
+# A plan request explicitly invokes the external Codex service; /health does not.
+server:
+	swift run forge-server
 
 # The pre-push gate. Anything that fails here fails in CI.
 check: format-check lint build test skills boundaries

@@ -20,7 +20,7 @@ import Observation
 final class CaptureModel {
     private(set) var guidance = GuidanceState.idle()
     private(set) var status = CaptureStatus.idle
-    private(set) var subjectCount = 0
+    private(set) var frameGeometry: FrameGeometry?
     /// Frames analyzed and frames rejected as stale, for the diagnostics readout.
     private(set) var framesAnalyzed = 0
 
@@ -55,7 +55,7 @@ final class CaptureModel {
             guard let self else { return }
             for await update in pipeline.updates {
                 guidance = update.guidance
-                subjectCount = update.scene.subjects.count
+                frameGeometry = update.scene.frame
                 framesAnalyzed += 1
             }
         }

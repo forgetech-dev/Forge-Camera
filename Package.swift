@@ -14,7 +14,14 @@ let package = Package(
         .library(name: "ForgeCore", targets: ["ForgeCore"]),
         .library(name: "ForgeCapture", targets: ["ForgeCapture"]),
         .library(name: "ForgeVision", targets: ["ForgeVision"]),
+        .library(name: "ForgeBridge", targets: ["ForgeBridge"]),
+        .library(name: "ForgeDirectorCodex", targets: ["ForgeDirectorCodex"]),
         .library(name: "ForgeTestSupport", targets: ["ForgeTestSupport"]),
+        .executable(
+            name: "forge-director-codex-spike",
+            targets: ["ForgeDirectorCodexSpike"]
+        ),
+        .executable(name: "forge-server", targets: ["ForgeServer"]),
     ],
     targets: [
         // Pure domain. Foundation only — no AVFoundation, Vision, ARKit, SwiftUI,
@@ -33,6 +40,34 @@ let package = Package(
         // scene state; never talks to the capture session or the network.
         .target(name: "ForgeVision", dependencies: ["ForgeCore", "ForgeFrame"]),
 
+        // Vendor-neutral local wire boundary. It owns HTTP framing and the
+        // loopback endpoint, but knows nothing about any concrete AI provider.
+        .target(name: "ForgeBridge", dependencies: ["ForgeCore"]),
+
+        // Development-Mac provider boundary. It owns image-to-plan behavior but
+        // never HTTP transport or iPhone credentials.
+        .target(
+            name: "ForgeDirectorCodex",
+            dependencies: ["ForgeCore"],
+            resources: [.copy("Resources/CompositionPlan.schema.json")]
+        ),
+
+        // Explicit external-service spike. Ordinary builds compile it, but ordinary
+        // tests never execute it or require a Codex subscription/network connection.
+        .executableTarget(
+            name: "ForgeDirectorCodexSpike",
+            dependencies: ["ForgeDirectorCodex"],
+            path: "Tools/ForgeDirectorCodexSpike"
+        ),
+
+        // Development-only Mac composition root. The first server slice binds
+        // loopback only; LAN exposure and pairing are deliberately deferred.
+        .executableTarget(
+            name: "ForgeServer",
+            dependencies: ["ForgeBridge", "ForgeDirectorCodex"],
+            path: "Tools/ForgeServer"
+        ),
+
         // Mocks, fixtures, and deterministic doubles. Depends on ForgeCore only.
         .target(name: "ForgeTestSupport", dependencies: ["ForgeCore"]),
 
@@ -47,6 +82,14 @@ let package = Package(
         .testTarget(
             name: "ForgeVisionTests",
             dependencies: ["ForgeVision", "ForgeCore", "ForgeFrame"]
+        ),
+        .testTarget(
+            name: "ForgeDirectorCodexTests",
+            dependencies: ["ForgeDirectorCodex", "ForgeCore"]
+        ),
+        .testTarget(
+            name: "ForgeBridgeTests",
+            dependencies: ["ForgeBridge", "ForgeCore"]
         ),
     ],
     swiftLanguageModes: [.v6]

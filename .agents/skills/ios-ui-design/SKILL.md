@@ -68,8 +68,9 @@ one arrow-or-target plus a very short label. Never a sentence.
 In production AI Compose, first show the fixed optical-centre reticle and the Director's visual
 anchor so the user can acquire the proposed subject or region. Once tracking is stable, show one
 target photograph frame and subdue excluded content. Raw detection bounds and current/target subject
-rectangles are diagnostics, off by default; they describe detector output rather than photographic
-intent. Thirds grid is a toggle, off by default, and visually quieter than the AI target.
+rectangles do not belong to the production overlay model; a separate diagnostic surface may inspect
+perception state when explicitly enabled. Thirds grid is a toggle, off by default, and visually
+quieter than the AI target.
 
 ### Pose overlays
 Skeleton overlays are diagnostic, not directive. Default them off. When guidance concerns pose, show

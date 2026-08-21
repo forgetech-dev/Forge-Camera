@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "planId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "type": "string",
+      "enum": [
+        "portrait",
+        "environmental_portrait",
+        "landscape",
+        "street",
+        "architecture",
+        "group"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "person",
+            "animal",
+            "object",
+            "place",
+            "scene",
+            "light",
+            "relationship"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "sourceRegion": {
+          "anyOf": [
+            { "$ref": "#/$defs/normalizedRect" },
+            { "type": "null" }
+          ]
+        },
+        "visualAnchor": {
+          "$ref": "#/$defs/normalizedPoint"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": ["kind", "label", "sourceRegion", "visualAnchor", "confidence"]
+    },
+    "framing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetFrame": {
+          "$ref": "#/$defs/normalizedRect"
+        }
+      },
+      "required": ["targetFrame"]
+    },
+    "displayAdvice": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      }
+    },
+    "expiresAfterSeconds": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 120
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planId",
+    "requestId",
+    "intent",
+    "confidence",
+    "rationale",
+    "selection",
+    "framing",
+    "displayAdvice",
+    "expiresAfterSeconds"
+  ],
+  "$defs": {
+    "normalizedPoint": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "normalizedRect": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    }
+  }
+}

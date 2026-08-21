@@ -76,7 +76,8 @@ An arrow's **length encodes magnitude** and its **direction encodes axis**. Both
 
 Physical-device validation replaced the original two-subject-box presentation. Raw detection bounds
 answer "what did the detector find?"; they do not answer "what photograph should I make?" They are
-diagnostics and are off in the production interface.
+absent from the production overlay model. A separate developer-only diagnostic surface may read
+perception state directly; do not carry those rectangles through `GuidanceState` for convenience.
 
 The production interaction has two spatial stages:
 
@@ -88,6 +89,12 @@ The production interaction has two spatial stages:
 2. **Compose the photograph.** Once local tracking is stable, replace acquisition emphasis with one
    target photograph frame. Subdue content outside it with a restrained scrim. The frame describes
    the desired photograph boundary; it is never derived from or presented as a subject bounding box.
+
+Do not expose normalized frame geometry through sliders or numeric controls. Manual reframing is the
+default: the photographer moves the camera until the scene matches the frame. The frame itself is a
+large hit target that may toggle an optional post-capture auto-crop. Show that selection visibly and
+through accessibility state, but do not change the live preview crop or imply that cropping has
+finished before a captured still exists.
 
 The user can tap a different subject or region to replace the AI proposal. The new choice rebinds
 local tracking; it does not require parsing any text.

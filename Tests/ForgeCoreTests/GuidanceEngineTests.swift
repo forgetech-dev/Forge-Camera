@@ -373,22 +373,35 @@ struct GuidanceEngineTests {
 
     // MARK: Overlay
 
-    @Test("The overlay shows the target as well as the current state")
-    func overlayCarriesTargetAndCurrent() {
+    @Test("The overlay carries photographic intent without detector boxes")
+    func overlayCarriesPhotographicIntent() {
         let scene = SceneFixtures.scene(
             horizon: HorizonEstimate(normalizedY: 0.55, roll: .zero, confidence: 0.9)
         )
         let plan = PlanFixtures.valid(
-            subject: SubjectPlan(targetX: 0.66, targetY: 0.45, targetHeight: 0.6),
+            selection: SubjectSelection(
+                kind: .person,
+                visualAnchor: NormalizedPoint(x: 0.42, y: 0.31)
+            ),
+            framing: FramingPlan(
+                targetFrame: NormalizedRect(x: 0.14, y: 0.12, width: 0.72, height: 0.76)
+            ),
+            displayAdvice: ["Keep the eyes clear"],
             scene: ScenePlan(targetHorizon: 0.34)
         )
 
-        let overlay = engine.guidance(for: scene, plan: plan).guidance.overlay
+        let guidance = engine.guidance(for: scene, plan: plan).guidance
+        let overlay = guidance.overlay
 
-        // Showing goal and gap together lets the user solve it themselves.
-        #expect(overlay.targetSubjectBounds != nil)
-        #expect(overlay.currentSubjectBounds != nil)
+        #expect(overlay.visualAnchor == NormalizedPoint(x: 0.42, y: 0.31))
+        #expect(overlay.targetFrame == NormalizedRect(
+            x: 0.14,
+            y: 0.12,
+            width: 0.72,
+            height: 0.76
+        ))
         #expect(overlay.targetHorizonY == 0.34)
         #expect(overlay.currentHorizonY == 0.55)
+        #expect(guidance.displayAdvice == ["Keep the eyes clear"])
     }
 }

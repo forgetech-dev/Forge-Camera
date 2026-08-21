@@ -8,16 +8,23 @@ import SwiftUI
 /// guidance layer sits directly on the image because it is spatial, and the status
 /// chrome is pinned to the edges so the centre of the frame stays clear.
 struct CaptureScreen: View {
+    /// A deterministic framing proposal used to validate the production preview path.
+    /// The next slice replaces this value with the Director's target frame.
+    private static let deterministicTargetFrame = NormalizedRect(
+        x: 0.15,
+        y: 0.16,
+        width: 0.7,
+        height: 0.68
+    )
+
     @State private var model = CaptureModel()
     private let formatter = GuidanceCueFormatter()
 
     var body: some View {
         Group {
             if case let .failed(error) = model.status {
-                // A camera failure must not leave the app useless. The guidance engine
-                // needs no camera to be worth looking at, so the offline harness takes
-                // over and says plainly why. This is also what a simulator sees, which
-                // makes the core loop demonstrable without hardware.
+                // A camera failure is stated directly. Product guidance belongs on a
+                // real image, so this path does not substitute a synthetic composition.
                 unavailable(error)
             } else {
                 liveCapture
@@ -38,8 +45,13 @@ struct CaptureScreen: View {
             CameraPreviewView(source: model.source)
                 .ignoresSafeArea()
 
-            GuidanceOverlayView(guidance: model.guidance)
-                .ignoresSafeArea()
+            GuidanceOverlayView(
+                guidance: model.guidance,
+                frameGeometry: model.frameGeometry,
+                targetFrame: Self.deterministicTargetFrame,
+                previewMirrored: false
+            )
+            .ignoresSafeArea()
 
             VStack {
                 statusBar
@@ -51,24 +63,20 @@ struct CaptureScreen: View {
     }
 
     private func unavailable(_ error: CaptureError) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "video.slash")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("No camera available")
-                        .font(.footnote.weight(.semibold))
-                    Text(error.recoverySuggestion ?? "Showing the guidance engine on a test scene.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(.regularMaterial)
-
-            GuidancePreviewScreen()
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "video.slash")
+                .font(.system(size: 40, weight: .medium))
+                .accessibilityHidden(true)
+            Text("No camera available")
+                .font(.headline)
+            Text(error.recoverySuggestion ?? "Connect or enable a camera, then try again.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Spacer()
         }
+        .padding(24)
     }
 
     // MARK: Chrome
@@ -84,14 +92,6 @@ struct CaptureScreen: View {
                 .background(.regularMaterial, in: Capsule())
 
             Spacer()
-
-            if case .ready = model.guidance.readiness {
-                Text("Ready")
-                    .font(.footnote.weight(.semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(.regularMaterial, in: Capsule())
-            }
         }
     }
 
@@ -124,7 +124,7 @@ struct CaptureScreen: View {
         case .idle: "Idle"
         case .awaitingPermission: "Camera permission"
         case .configuring: "Starting"
-        case .running: "\(model.subjectCount) subject\(model.subjectCount == 1 ? "" : "s")"
+        case .running: "Camera ready"
         case .interrupted: "Interrupted"
         case let .failed(error): error.recoverySuggestion ?? "Camera unavailable"
         }
@@ -137,7 +137,7 @@ struct CaptureScreen: View {
         case .idle: "camera"
         case .awaitingPermission: "lock"
         case .configuring: "camera.badge.ellipsis"
-        case .running: "person.fill.viewfinder"
+        case .running: "camera.fill"
         case .interrupted: "exclamationmark.triangle"
         case .failed: "xmark.octagon"
         }

@@ -1,3 +1,4 @@
+import ForgeCapture
 import ForgeCore
 import SwiftUI
 
@@ -7,65 +8,89 @@ import SwiftUI
 /// owns deadband, hysteresis, and stability. A view-layer animation that disguised
 /// jitter would hide a real bug and add latency.
 ///
-/// Shows the target as well as the gap, so the user can solve the framing themselves
-/// rather than following corrections one at a time.
+/// Subject detection rectangles are not part of this presentation model. A detector's
+/// bounds explain what it found; they are not a composition recommendation.
 struct GuidanceOverlayView: View {
     let guidance: GuidanceState
+    let frameGeometry: FrameGeometry?
+    let targetFrame: NormalizedRect?
+    let previewMirrored: Bool
 
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
 
-            ZStack(alignment: .topLeading) {
-                ForEach(
-                    Array(guidance.overlay.avoidRegions.enumerated()),
-                    id: \.offset
-                ) { _, region in
-                    rectangle(region, in: size)
-                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                        .foregroundStyle(.red.opacity(0.7))
-                }
+            if let frameGeometry,
+               let geometry = PreviewGeometry(
+                   frame: frameGeometry,
+                   viewportSize: size,
+                   previewMirrored: previewMirrored
+               ) {
+                ZStack(alignment: .topLeading) {
+                    if let targetFrame {
+                        targetFrameOverlay(geometry.rect(for: targetFrame), in: size)
+                    }
 
-                if let current = guidance.overlay.currentSubjectBounds {
-                    rectangle(current, in: size)
-                        .stroke(lineWidth: 1)
-                        .foregroundStyle(.white.opacity(0.45))
-                }
+                    ForEach(
+                        Array(guidance.overlay.avoidRegions.enumerated()),
+                        id: \.offset
+                    ) { _, region in
+                        rectangle(geometry.rect(for: region))
+                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .foregroundStyle(.red.opacity(0.7))
+                    }
 
-                // The target is drawn more strongly than the current bounds: it is
-                // where the user is going, not where they already are.
-                if let target = guidance.overlay.targetSubjectBounds {
-                    rectangle(target, in: size)
-                        .stroke(lineWidth: 2)
+                    if let y = guidance.overlay.currentHorizonY {
+                        horizon(
+                            at: geometry.point(for: NormalizedPoint(x: 0, y: y)).y,
+                            dashed: false
+                        )
+                        .foregroundStyle(.secondary.opacity(0.7))
+                    }
+                    if let y = guidance.overlay.targetHorizonY {
+                        horizon(
+                            at: geometry.point(for: NormalizedPoint(x: 0, y: y)).y,
+                            dashed: true
+                        )
                         .foregroundStyle(.yellow)
+                    }
                 }
-
-                if let y = guidance.overlay.currentHorizonY {
-                    horizon(at: y, in: size, dashed: false)
-                        .foregroundStyle(.white.opacity(0.45))
-                }
-                if let y = guidance.overlay.targetHorizonY {
-                    horizon(at: y, in: size, dashed: true)
-                        .foregroundStyle(.yellow)
-                }
+                // Contrast cannot come from colour alone over unpredictable live imagery.
+                .shadow(color: .black.opacity(0.6), radius: 1)
             }
-            // Contrast cannot come from colour alone over unpredictable live imagery.
-            .shadow(color: .black.opacity(0.6), radius: 1)
         }
         .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Suggested framing area")
+        .accessibilityHidden(frameGeometry == nil || targetFrame == nil)
     }
 
-    private func rectangle(_ rect: NormalizedRect, in size: CGSize) -> Path {
-        Path(CGRect(
-            x: rect.x * size.width,
-            y: rect.y * size.height,
-            width: rect.width * size.width,
-            height: rect.height * size.height
-        ))
+    private func targetFrameOverlay(_ targetRect: CGRect, in size: CGSize) -> some View {
+        ZStack {
+            outsideScrim(around: targetRect, in: size)
+                .fill(
+                    Color(uiColor: .systemBackground).opacity(0.28),
+                    style: FillStyle(eoFill: true)
+                )
+            rectangle(targetRect)
+                .stroke(Color(uiColor: .systemBackground).opacity(0.85), lineWidth: 4)
+            rectangle(targetRect)
+                .stroke(Color(uiColor: .label), lineWidth: 2)
+        }
     }
 
-    private func horizon(at y: Double, in size: CGSize, dashed: Bool) -> some Shape {
-        HorizonLine(y: y * size.height, dashed: dashed)
+    private func outsideScrim(around targetRect: CGRect, in size: CGSize) -> Path {
+        var path = Path(CGRect(origin: .zero, size: size))
+        path.addRect(targetRect)
+        return path
+    }
+
+    private func rectangle(_ rect: CGRect) -> Path {
+        Path(rect)
+    }
+
+    private func horizon(at y: CGFloat, dashed: Bool) -> some Shape {
+        HorizonLine(y: y, dashed: dashed)
     }
 }
 

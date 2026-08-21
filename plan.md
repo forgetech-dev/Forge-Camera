@@ -388,6 +388,9 @@ following optional fields to schema version 1 while preserving older plans:
 - `visualAnchor` is a compositional attention point, not automatically an autofocus point.
 - `targetFrame` is the proposed photograph boundary in Forge normalized planning-image space. It is
   not a subject bounding box and its preview mapping must account for aspect-fill cropping.
+- No user-facing sliders expose the frame's normalized coordinates. Manual reframing is the default;
+  tapping the frame selects an optional post-capture crop to that boundary. The crop must operate on
+  captured still-image pixels and must not be represented as complete before a photo exists.
 - `label`, `displayAdvice`, and the existing `rationale` are display-only. Structured fields drive
   every computation.
 - The user may replace the proposed selection by tapping another subject or region.
@@ -715,6 +718,29 @@ D-6 below.
 coalescing), `forge-server` on macOS, `ForgeDirectorCodex`, BYOK Keychain storage, settings UI for
 backend selection, sanitized planning-image input, AI subject/theme selection, local arbitrary-region
 tracking, and the anchor-to-frame composition interaction.
+
+**First validation slice [D-12]:** prove the smallest Mac-only path before adding networking or
+credentials UI. A local spike sends one privacy-sanitized fixture image to the already-installed,
+already-authenticated Codex CLI using non-interactive execution and a JSON output schema, then
+decodes and validates the resulting `CompositionPlan`. Only after that succeeds do we wrap the same
+provider in `forge-server` and connect the iPhone over the local network. BYOK, user accounts,
+backend-selection UI, and production credential provisioning are deferred until the photographic
+interaction has demonstrated value. The app never receives or stores the Mac's Codex credentials.
+
+**Status 2026-08-20:** this Mac-only proof passes end to end. The provider re-encodes one input to a
+metadata-free JPEG with a maximum 1024-pixel edge, invokes `codex exec` in an ephemeral read-only
+workspace, decodes the schema-constrained output, verifies the request identity, and applies
+`PlanValidator`. Two real animal-scene runs produced usable selections, visual anchors, target frames,
+and three display suggestions each in 13.28 and 10.19 seconds. This proves repeat execution on the
+selected path, not yet subject-agnostic behavior, stability, or an acceptable latency distribution.
+
+The next incremental slice also passes: `forge-server` exposes `GET /health` and multipart
+`POST /v1/plan` on `127.0.0.1:8765`, with bounded headers and image bodies, JPEG/PNG-only input,
+stable redacted errors, and no logging of photographs or credentials. A real `curl` request completed
+the HTTP → image sanitizer → Codex → validated `CompositionPlan` path. The unauthenticated listener
+is deliberately loopback-only. iPhone/LAN access remains unbuilt and must add a per-session pairing
+token before binding to a non-loopback interface.
+
 **Exit:** F-04, F-05, F-12–F-15 against a real model; N-03, N-04, N-05, N-10 verified; a person,
 animal, object, and scene-level theme each complete the same interaction; killing the server degrades
 cleanly to `HeuristicDirector` (F-30) with a visible indicator.
@@ -813,8 +839,11 @@ are held to a lower bar.
 | ID | Decision | Rationale |
 |---|---|---|
 | D-5 | The AI Director proposes the photographic subject or scene theme from a selected image; it is not limited to human detections | Photography subjects include animals, objects, architecture, landscape, light, and relationships. Human-only Vision output is an offline scaffold, not product semantics. |
-| D-6 | The production overlay is a two-stage visual-anchor acquisition followed by one target photograph frame; raw current/target subject rectangles are diagnostics only | A detection box describes what the system found, not what photograph to make. A visual anchor and target frame communicate intent directly. |
+| D-6 | The production overlay is a two-stage visual-anchor acquisition followed by one target photograph frame; raw current/target subject rectangles do not enter the production `OverlayModel` | A detection box describes what the system found, not what photograph to make. Diagnostics must inspect perception state separately instead of leaking detector geometry into user guidance. |
 | D-7 | Live textual advice is short and display-only | Text can explain the shot, but deterministic structured geometry and typed cues must remain the only control state. |
+| D-9 | The target frame is the only user-facing framing geometry; there are no coordinate sliders. The user either moves the camera to match it or taps it to select post-capture auto-crop | One direct spatial affordance keeps composition understandable. Auto-crop is an explicit choice applied to the captured still, not a preview transform or a claim that a photo already exists. |
+| D-12 | The Phase 3 functional prototype starts on a trusted development Mac by invoking its installed, already-authenticated Codex CLI; the iPhone reaches it through `forge-server` only after a Mac-only image-to-plan spike passes | This is the shortest replaceable path to validate AI photographic judgment. It keeps OpenAI credentials off the phone and out of the repository while deferring BYOK, account UI, and production deployment. It is a prototype choice, not a permanent backend lock-in. |
+| D-13 | The development `forge-server` may run without application authentication only while hard-bound to `127.0.0.1`; LAN exposure requires a per-session pairing token first | This keeps the smallest local validation path simple without turning an arbitrary device on the local network into an unauthenticated Codex client. |
 
 ### Decisions to confirm before phase 0 closes
 
@@ -834,8 +863,12 @@ are held to a lower bar.
 | V-3 | A7C II USB streaming (UVC) resolution/frame-rate, and whether it can coexist with PC Remote control on the same connection | A UVC live view + PTP control split may be simpler than CrSDK live view |
 | V-4 | `libgphoto2` coverage for the A7C II (LGPL-2.1, dynamic linking only) | A viable, fully open alternative path — `libusb` is already installed |
 | V-5 | Whether iPhone (not just iPad) supports `AVCaptureDevice.DeviceType.external` on iOS 18 | If yes, a direct USB-C live-view path exists with no Mac; if no, §4.1's bridge is unavoidable |
-| V-6 | `codex exec` non-interactive JSON output stability and latency | Determines whether Codex is viable as a phase-3 backend or only a prototype |
+| V-6 | A real `codex exec` image-to-schema run produces stable valid `CompositionPlan` JSON with acceptable latency | The installed Codex CLI 0.144.6 exposes non-interactive image input, output-schema, ephemeral, and read-only flags; actual model output and latency still determine whether it is viable beyond the prototype |
 | V-7 | On-device Vision body-pose throughput at the target resolution | Validates N-01 before the phase-2 architecture is locked |
+
+V-6 is partially verified: two real image-to-plan requests passed in 13.28 and 10.19 seconds on
+2026-08-20. Both selected animals; person, object, and scene-level inputs plus a latency distribution
+remain open.
 
 ### Risks
 

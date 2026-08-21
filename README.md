@@ -17,11 +17,11 @@ Read **[goal.md](goal.md)** for the full vision, architecture goals, and non-goa
 
 ## Status
 
-**Phase 1 is complete; Phase 2 is underway.** The Foundation-only domain, composition guidance,
-exposure planning, deterministic director, and 129 hardware-free tests are working. The first phone
-camera slice now provides the frame contract, deterministic replay source, bounded owned pixel
-buffers, and an AVFoundation frame source. Live preview, Vision analysis, and the real HUD wiring are
-the next Phase 2 work; device-level behavior is not yet verified.
+**Phase 1 is complete and the Phase 2 phone-camera vertical slice runs on a physical iPhone.** The
+Foundation-only domain, capture and Vision pipeline, composition guidance, deterministic director,
+tested preview geometry, and 182 hardware-free tests are working. A loopback-only Mac development
+server now accepts one image, invokes the installed Codex CLI, and returns a validated composition
+plan; phone-to-Mac LAN networking is not connected yet.
 
 | | |
 |---|---|
@@ -53,6 +53,30 @@ make check
 
 Hardware tests and external-service tests are isolated and explicitly invoked. Mock adapters,
 recorded sessions, and a deterministic offline director stand in for everything else.
+
+To explicitly run the development-only real-AI spike, first sign in with the installed Codex CLI,
+then provide one non-sensitive JPEG or PNG. The provider downsizes it to a maximum 1024-pixel edge,
+re-encodes it without source metadata, runs an ephemeral read-only `codex exec`, and validates the
+structured result. This command uses an external service and never runs in ordinary tests or CI:
+
+```sh
+make codex-spike IMAGE=/path/to/image.jpg
+```
+
+To exercise the same provider through the development HTTP boundary, start the server in one
+terminal, then upload an image from another. The current server deliberately binds only to
+`127.0.0.1`; it is not reachable from an iPhone or another computer and does not need an application
+credential. The plan route invokes the external Codex service; the health route does not.
+
+```sh
+make server
+
+curl http://127.0.0.1:8765/health
+curl --form image=@/path/to/image.jpg http://127.0.0.1:8765/v1/plan
+```
+
+LAN access will be added separately with an explicit development pairing token before the listener
+is allowed to leave the loopback interface.
 
 The iOS project is generated rather than committed. Install XcodeGen 2.46.0, then run:
 

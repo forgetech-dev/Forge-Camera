@@ -122,7 +122,8 @@ public struct GuidanceEngine: Sendable {
                 planId: plan.planId,
                 cues: cues,
                 readiness: readiness(from: cues, hadCandidates: !candidates.isEmpty),
-                overlay: overlay(for: scene, plan: plan, subject: subject)
+                overlay: overlay(for: scene, plan: plan),
+                displayAdvice: plan.displayAdvice ?? []
             ),
             memory: MemoryState(activeAxes: candidates.activeAxes)
         )
@@ -163,29 +164,10 @@ public struct GuidanceEngine: Sendable {
         return .blocked(blocking)
     }
 
-    private func overlay(
-        for scene: SceneState,
-        plan: CompositionPlan,
-        subject: DetectedSubject?
-    ) -> OverlayModel {
-        var targetBounds: NormalizedRect?
-        if let subjectPlan = plan.subject, let centre = subjectPlan.targetCentre {
-            let height = subjectPlan.targetHeight ?? subject?.bounds.height ?? 0
-            let aspect = subject.map {
-                $0.bounds.height > 0 ? $0.bounds.width / $0.bounds.height : 0.5
-            } ?? 0.5
-            let width = height * aspect
-            targetBounds = NormalizedRect(
-                x: centre.x - width / 2,
-                y: centre.y - height / 2,
-                width: width,
-                height: height
-            )
-        }
-
-        return OverlayModel(
-            targetSubjectBounds: targetBounds,
-            currentSubjectBounds: subject?.bounds,
+    private func overlay(for scene: SceneState, plan: CompositionPlan) -> OverlayModel {
+        OverlayModel(
+            visualAnchor: plan.selection?.visualAnchor,
+            targetFrame: plan.framing?.targetFrame,
             targetHorizonY: plan.scene?.targetHorizon,
             currentHorizonY: scene.horizon?.normalizedY,
             avoidRegions: plan.scene?.avoidRegions ?? []

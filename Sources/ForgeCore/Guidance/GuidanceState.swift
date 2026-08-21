@@ -108,15 +108,13 @@ public enum Readiness: Sendable, Equatable {
     }
 }
 
-/// What the overlay should draw, derived from the plan rather than from the error.
-///
-/// Showing the target as well as the gap lets the user solve the problem themselves,
-/// which is faster than following corrections one at a time.
+/// What the overlay should draw, derived from photographic intent rather than raw
+/// detector geometry.
 public struct OverlayModel: Sendable, Equatable {
-    /// Where the subject should be, if the plan said.
-    public let targetSubjectBounds: NormalizedRect?
-    /// Where the subject currently is.
-    public let currentSubjectBounds: NormalizedRect?
+    /// The Director's compositional attention point in normalized frame space.
+    public let visualAnchor: NormalizedPoint?
+    /// The photograph boundary proposed by the Director, not a detection box.
+    public let targetFrame: NormalizedRect?
     /// Target normalized y of the horizon.
     public let targetHorizonY: Double?
     /// Current normalized y of the horizon.
@@ -124,14 +122,14 @@ public struct OverlayModel: Sendable, Equatable {
     public let avoidRegions: [NormalizedRect]
 
     public init(
-        targetSubjectBounds: NormalizedRect? = nil,
-        currentSubjectBounds: NormalizedRect? = nil,
+        visualAnchor: NormalizedPoint? = nil,
+        targetFrame: NormalizedRect? = nil,
         targetHorizonY: Double? = nil,
         currentHorizonY: Double? = nil,
         avoidRegions: [NormalizedRect] = []
     ) {
-        self.targetSubjectBounds = targetSubjectBounds
-        self.currentSubjectBounds = currentSubjectBounds
+        self.visualAnchor = visualAnchor
+        self.targetFrame = targetFrame
         self.targetHorizonY = targetHorizonY
         self.currentHorizonY = currentHorizonY
         self.avoidRegions = avoidRegions
@@ -150,17 +148,21 @@ public struct GuidanceState: Sendable, Equatable {
     public let cues: [GuidanceCue]
     public let readiness: Readiness
     public let overlay: OverlayModel
+    /// Short Director prose for display only; no application logic may inspect its wording.
+    public let displayAdvice: [String]
 
     public init(
         planId: String?,
         cues: [GuidanceCue],
         readiness: Readiness,
-        overlay: OverlayModel
+        overlay: OverlayModel,
+        displayAdvice: [String] = []
     ) {
         self.planId = planId
         self.cues = cues
         self.readiness = readiness
         self.overlay = overlay
+        self.displayAdvice = displayAdvice
     }
 
     /// Nothing to say — no plan, or no subject to guide toward one.
